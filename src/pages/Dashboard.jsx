@@ -100,23 +100,21 @@ export default function Dashboard({ user }) {
             </button>
           </div>
         ) : (
-          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem'}}>
+          <div style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
             {reports.map(report => (
-              <div key={report.id} className="glass-panel" style={{padding: '1.5rem', display: 'flex', flexDirection: 'column'}}>
-                <h3 style={{fontSize: '1.25rem', marginBottom: '1rem', color: 'var(--primary-color)'}}>{report.title || 'Informe sin título'}</h3>
+              <div key={report.id} className="glass-panel" style={{padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem'}}>
                 
-                <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: 'var(--text-light)', marginBottom: '0.5rem'}}>
-                  <Calendar size={14} /> Creado: {formatDate(report.createdAt)}
-                </div>
-                <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: 'var(--text-light)', marginBottom: '1.5rem'}}>
-                  <Edit size={14} /> Editado: {formatDate(report.updatedAt)}
+                <div style={{display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1}}>
+                  <h3 style={{fontSize: '1.1rem', margin: 0, color: 'var(--primary-color)'}}>{report.title || 'Informe sin título'}</h3>
+                  <div style={{display: 'flex', flexWrap: 'wrap', gap: '1.5rem', fontSize: '0.85rem', color: 'var(--text-light)'}}>
+                    <span style={{display: 'flex', alignItems: 'center', gap: '0.3rem'}}><Calendar size={14} /> Creado: {formatDate(report.createdAt)}</span>
+                    <span style={{display: 'flex', alignItems: 'center', gap: '0.3rem'}}><Edit size={14} /> Editado: {formatDate(report.updatedAt)}</span>
+                  </div>
                 </div>
                 
-                <div style={{marginTop: 'auto', display: 'flex', gap: '0.5rem'}}>
-                  <button onClick={() => navigate(`/report/${report.id}`)} className="btn btn-secondary" style={{flex: 1, padding: '0.5rem'}}>
-                    Abrir / Editar
-                  </button>
-                </div>
+                <button onClick={() => navigate(`/report/${report.id}`)} className="btn btn-secondary" style={{padding: '0.6rem 1.2rem', whiteSpace: 'nowrap'}}>
+                  Abrir / Editar
+                </button>
               </div>
             ))}
           </div>
