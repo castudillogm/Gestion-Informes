@@ -15,14 +15,21 @@ export default function Dashboard({ user }) {
       try {
         const q = query(
           collection(db, 'reports'),
-          where('userId', '==', user.uid),
-          orderBy('updatedAt', 'desc')
+          where('userId', '==', user.uid)
         );
         const querySnapshot = await getDocs(q);
         const reportsData = [];
         querySnapshot.forEach((doc) => {
           reportsData.push({ id: doc.id, ...doc.data() });
         });
+        
+        // Ordenar en el cliente (evita el error de índice compuesto de Firestore)
+        reportsData.sort((a, b) => {
+          const timeA = a.updatedAt?.toMillis ? a.updatedAt.toMillis() : 0;
+          const timeB = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : 0;
+          return timeB - timeA;
+        });
+
         setReports(reportsData);
       } catch (error) {
         console.error("Error fetching reports:", error);
