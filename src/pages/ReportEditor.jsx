@@ -90,15 +90,39 @@ export default function ReportEditor({ user }) {
     });
   };
 
+  const compressImage = (file) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800; // Reducir tamaño máximo
+          let width = img.width;
+          let height = img.height;
+
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // Comprimir a JPEG con calidad reducida
+          resolve(canvas.toDataURL('image/jpeg', 0.6));
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   const uploadImage = async (file, sectionId) => {
-    // Para simplificar la demo local mostramos preview base64 temporalmente
-    // En producción se subiría a Firebase Storage aquí, o al momento de "Guardar"
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target.result;
-      updateSection(sectionId, 'images', dataUrl, true);
-    };
-    reader.readAsDataURL(file);
+    const compressedDataUrl = await compressImage(file);
+    updateSection(sectionId, 'images', compressedDataUrl, true);
   };
 
   const removeImage = (sectionId, imageIndex) => {
@@ -157,33 +181,10 @@ export default function ReportEditor({ user }) {
   const saveReport = async () => {
     setSaving(true);
     try {
-      // Subir imágenes a Firebase Storage en lugar de guardarlas en base64 en Firestore
-      const updatedSections = [...report.sections];
-      
-      for (let i = 0; i < updatedSections.length; i++) {
-        const section = updatedSections[i];
-        const newImages = [];
-        
-        for (let j = 0; j < section.images.length; j++) {
-          let img = section.images[j];
-          // Si la imagen es un base64 recién subido, la guardamos en Storage
-          if (img.startsWith('data:image')) {
-            const imageRef = ref(storage, `reports/${user.uid}/${Date.now()}_${i}_${j}`);
-            // Usa fetch para convertir el base64 a un Blob y subirlo de forma más robusta
-            const response = await fetch(img);
-            const blob = await response.blob();
-            await uploadBytes(imageRef, blob);
-            img = await getDownloadURL(imageRef);
-          }
-          newImages.push(img);
-        }
-        section.images = newImages;
-      }
-
       const reportData = {
         title: report.title,
         userId: user.uid,
-        sections: updatedSections,
+        sections: report.sections, // Ya están comprimidas
         updatedAt: serverTimestamp()
       };
 
