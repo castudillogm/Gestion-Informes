@@ -157,13 +157,33 @@ export default function ReportEditor({ user }) {
   const saveReport = async () => {
     setSaving(true);
     try {
-      // Nota: En una app real completa, aquí iteraríamos sobre las imágenes base64 
-      // y las subiríamos a Firebase Storage antes de guardar los URLs en Firestore.
+      // Subir imágenes a Firebase Storage en lugar de guardarlas en base64 en Firestore
+      const updatedSections = [...report.sections];
       
+      for (let i = 0; i < updatedSections.length; i++) {
+        const section = updatedSections[i];
+        const newImages = [];
+        
+        for (let j = 0; j < section.images.length; j++) {
+          let img = section.images[j];
+          // Si la imagen es un base64 recién subido, la guardamos en Storage
+          if (img.startsWith('data:image')) {
+            const imageRef = ref(storage, `reports/${user.uid}/${Date.now()}_${i}_${j}`);
+            // Usa fetch para convertir el base64 a un Blob y subirlo de forma más robusta
+            const response = await fetch(img);
+            const blob = await response.blob();
+            await uploadBytes(imageRef, blob);
+            img = await getDownloadURL(imageRef);
+          }
+          newImages.push(img);
+        }
+        section.images = newImages;
+      }
+
       const reportData = {
         title: report.title,
         userId: user.uid,
-        sections: report.sections,
+        sections: updatedSections,
         updatedAt: serverTimestamp()
       };
 
