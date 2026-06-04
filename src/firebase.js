@@ -3,17 +3,17 @@ import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
-// IMPORTANTE: Deberás reemplazar esto con tu configuración de Firebase
+// Configuración de Firebase fija para despliegue en GitHub Pages
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDummyKey",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "dummy-domain.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "dummy-project",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "dummy-project.appspot.com",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "123456789",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:123456789:web:abcdef123456"
+  apiKey: "AIzaSyAbTG6YI2EbYQkcOrrRB9oPMSS7l92biQo",
+  authDomain: "gestor-informe.firebaseapp.com",
+  projectId: "gestor-informe",
+  storageBucket: "gestor-informe.firebasestorage.app",
+  messagingSenderId: "803040546369",
+  appId: "1:803040546369:web:c0009487879ab1c21a00c0",
+  measurementId: "G-L15B0YDC13"
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
