@@ -97,7 +97,7 @@ export default function ReportEditor({ user }) {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 800; // Reducir tamaño máximo
+          const MAX_WIDTH = 1200; // Aumentado para mayor nitidez en el PDF
           let width = img.width;
           let height = img.height;
 
@@ -111,8 +111,8 @@ export default function ReportEditor({ user }) {
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, width, height);
           
-          // Comprimir a JPEG con calidad reducida
-          resolve(canvas.toDataURL('image/jpeg', 0.6));
+          // Comprimir a JPEG con mayor calidad (85%)
+          resolve(canvas.toDataURL('image/jpeg', 0.85));
         };
         img.src = e.target.result;
       };
