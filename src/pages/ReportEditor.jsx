@@ -4,7 +4,7 @@ import { db, storage } from '../firebase';
 import { doc, getDoc, setDoc, collection, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { ArrowLeft, Save, FileDown, Plus, Trash2, Image as ImageIcon, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, Save, FileDown, Plus, Trash2, Image as ImageIcon, Sparkles, X, Mic, MicOff } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 
@@ -19,6 +19,68 @@ export default function ReportEditor({ user }) {
   const [saving, setSaving] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const pdfRef = useRef();
+
+  const recognitionRef = useRef(null);
+  const [listeningSection, setListeningSection] = useState(null);
+
+  const toggleListening = (sectionId) => {
+    if (listeningSection === sectionId) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setListeningSection(null);
+      return;
+    }
+
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Tu navegador no soporta reconocimiento de voz. Te recomendamos usar Google Chrome.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'es-ES';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onresult = (event) => {
+      let finalTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        }
+      }
+      if (finalTranscript) {
+        setReport(prevReport => {
+          const newSections = prevReport.sections.map(s => {
+            if (s.id === sectionId) {
+              const separator = (s.originalComment && !s.originalComment.endsWith(' ')) ? ' ' : '';
+              return { ...s, originalComment: s.originalComment + separator + finalTranscript };
+            }
+            return s;
+          });
+          return { ...prevReport, sections: newSections };
+        });
+      }
+    };
+
+    recognition.onerror = (event) => {
+      console.error("Error de voz:", event.error);
+      setListeningSection(null);
+    };
+
+    recognition.onend = () => {
+      setListeningSection(null);
+    };
+
+    recognition.start();
+    recognitionRef.current = recognition;
+    setListeningSection(sectionId);
+  };
 
   useEffect(() => {
     const fetchReport = async () => {
@@ -343,13 +405,25 @@ export default function ReportEditor({ user }) {
             )}
 
             {/* Comentario Original */}
-            <div className="form-group">
-              <label className="form-label">Comentario sobre las imágenes:</label>
+            <div className="form-group" style={{position: 'relative'}}>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
+                <label className="form-label" style={{margin: 0}}>Comentario sobre las imágenes:</label>
+                <button 
+                  onClick={() => toggleListening(section.id)}
+                  className={`btn ${listeningSection === section.id ? 'btn-danger' : 'btn-secondary'}`}
+                  style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', display: 'flex', gap: '0.3rem', alignItems: 'center'}}
+                  title="Dictar por voz"
+                >
+                  {listeningSection === section.id ? <MicOff size={16} /> : <Mic size={16} />}
+                  {listeningSection === section.id ? 'Detener' : 'Hablar'}
+                </button>
+              </div>
               <textarea 
                 className="form-control" 
                 value={section.originalComment}
                 onChange={(e) => updateSection(section.id, 'originalComment', e.target.value)}
-                placeholder="Escribe lo que observas en las fotos..."
+                placeholder="Escribe o dicta lo que observas en las fotos..."
+                style={{minHeight: '100px'}}
               />
             </div>
 
