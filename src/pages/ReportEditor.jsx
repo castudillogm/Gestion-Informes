@@ -227,7 +227,13 @@ export default function ReportEditor({ user }) {
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-      const prompt = `Actúa como un experto redactor de informes técnicos. Mejora la redacción del siguiente comentario para que suene muy formal, claro y profesional para un informe. NO inventes ningún dato nuevo, NO agregues conclusiones que no estén en el texto original. Solo mejora la gramática y el tono del texto proporcionado:\n\n${section.originalComment}`;
+      const glossary = localStorage.getItem('companyGlossary');
+      let glossaryContext = '';
+      if (glossary && glossary.trim() !== '') {
+        glossaryContext = `\n\nIMPORTANTE: El usuario ha dictado el texto original usando un micrófono, por lo que es altamente probable que haya errores tipográficos o palabras transcritas fonéticamente de forma incorrecta. Usa el siguiente GLOSARIO TÉCNICO DE LA EMPRESA para identificar esas palabras mal transcritas y corregirlas en tu redacción final:\n--- GLOSARIO ---\n${glossary}\n----------------\n`;
+      }
+
+      const prompt = `Actúa como un experto redactor de informes técnicos. Mejora la redacción del siguiente comentario para que suene muy formal, claro y profesional para un informe técnico. NO inventes ningún dato nuevo, NO agregues conclusiones que no estén en el texto original. Solo mejora la gramática, corrige errores de transcripción de voz y ajusta el tono.${glossaryContext}\n\nTEXTO ORIGINAL A MEJORAR:\n${section.originalComment}`;
 
       const result = await model.generateContent(prompt);
       const response = await result.response;
