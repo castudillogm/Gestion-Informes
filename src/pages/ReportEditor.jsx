@@ -27,6 +27,7 @@ export default function ReportEditor({ user }) {
   const [shareRole, setShareRole] = useState('editor');
   const [fullScreenImage, setFullScreenImage] = useState(null);
   const [deletedSectionInfo, setDeletedSectionInfo] = useState(null);
+  const [uploadingImages, setUploadingImages] = useState({});
   const autoSaveTimerRef = useRef(null);
 
   const isOwner = report.userId === user.uid || id === 'new';
@@ -380,13 +381,27 @@ export default function ReportEditor({ user }) {
     });
   };
 
+  const dataURLtoBlob = (dataurl) => {
+    let arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1],
+        bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
+    while(n--){
+        u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], {type:mime});
+  }
+
   const uploadImage = async (file, sectionId) => {
+    let compressedDataUrl = null;
     try {
       setSaving(true);
-      const compressedDataUrl = await compressImage(file);
+      compressedDataUrl = await compressImage(file);
       
-      const response = await fetch(compressedDataUrl);
-      const blob = await response.blob();
+      setUploadingImages(prev => ({
+        ...prev,
+        [sectionId]: [...(prev[sectionId] || []), compressedDataUrl]
+      }));
+
+      const blob = dataURLtoBlob(compressedDataUrl);
       
       const reportId = id !== 'new' ? id : 'temp_report';
       const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.jpg`;
@@ -400,6 +415,12 @@ export default function ReportEditor({ user }) {
       console.error("Error al subir la imagen a Storage:", error);
       alert("Hubo un error al guardar la imagen. Por favor, intenta de nuevo.");
     } finally {
+      if (compressedDataUrl) {
+        setUploadingImages(prev => ({
+          ...prev,
+          [sectionId]: (prev[sectionId] || []).filter(url => url !== compressedDataUrl)
+        }));
+      }
       setSaving(false);
     }
   };
@@ -728,7 +749,7 @@ ${section.originalComment}`;
             )}
 
             {/* Preview de Imágenes */}
-            {section.images.length > 0 && (
+            {(section.images.length > 0 || (uploadingImages[section.id] && uploadingImages[section.id].length > 0)) && (
               <div style={{display: 'flex', gap: '1rem', overflowX: 'auto', paddingBottom: '1rem', marginBottom: '1.5rem'}}>
                 {section.images.map((imgUrl, imgIndex) => (
                   <div key={imgIndex} style={{position: 'relative', minWidth: '150px', height: '150px'}}>
@@ -752,6 +773,15 @@ ${section.originalComment}`;
                         <X size={14} />
                       </button>
                     )}
+                  </div>
+                ))}
+                {/* Imágenes Subiendo */}
+                {(uploadingImages[section.id] || []).map((imgUrl, imgIndex) => (
+                  <div key={`uploading-${imgIndex}`} style={{position: 'relative', minWidth: '150px', height: '150px', opacity: 0.6}}>
+                    <img src={imgUrl} alt="Subiendo" style={{width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px', border: '1px solid #ddd'}} />
+                    <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(0,0,0,0.6)', color: 'white', padding: '5px 10px', borderRadius: '15px', fontSize: '0.8rem', fontWeight: 'bold'}}>
+                      Subiendo...
+                    </div>
                   </div>
                 ))}
               </div>
