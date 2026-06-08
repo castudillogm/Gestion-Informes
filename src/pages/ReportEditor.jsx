@@ -4,7 +4,7 @@ import { db, storage } from '../firebase';
 import { doc, getDoc, setDoc, collection, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { ArrowLeft, Save, FileDown, Plus, Trash2, Image as ImageIcon, Sparkles, X, Mic, MicOff } from 'lucide-react';
+import { ArrowLeft, Save, FileDown, Plus, Trash2, Image as ImageIcon, Sparkles, X, Mic, MicOff, Camera } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 
@@ -410,20 +410,37 @@ export default function ReportEditor({ user }) {
               onPaste={(e) => handleImagePaste(e, section.id)}
             >
               <ImageIcon size={32} color="#ccc" style={{marginBottom: '0.5rem'}} />
-              <p style={{margin: '0 0 0.5rem 0', color: 'var(--text-light)'}}>
-                Haz clic para subir imágenes o pega (Ctrl+V) imágenes aquí
+              <p style={{margin: '0 0 1rem 0', color: 'var(--text-light)'}}>
+                Haz clic para subir imágenes, tomar una foto o pega (Ctrl+V) imágenes aquí
               </p>
-              <input 
-                type="file" 
-                multiple 
-                accept="image/*" 
-                onChange={(e) => handleImageSelect(e, section.id)} 
-                style={{display: 'none'}} 
-                id={`file-upload-${section.id}`}
-              />
-              <label htmlFor={`file-upload-${section.id}`} className="btn btn-secondary" style={{fontSize: '0.85rem'}}>
-                Seleccionar Archivos
-              </label>
+              
+              <div style={{display: 'flex', gap: '1rem', justifyContent: 'center'}}>
+                {/* Botón para subir archivos */}
+                <input 
+                  type="file" 
+                  multiple 
+                  accept="image/*" 
+                  onChange={(e) => handleImageSelect(e, section.id)} 
+                  style={{display: 'none'}} 
+                  id={`file-upload-${section.id}`}
+                />
+                <label htmlFor={`file-upload-${section.id}`} className="btn btn-secondary" style={{fontSize: '0.85rem'}}>
+                  <ImageIcon size={16} /> Seleccionar Archivos
+                </label>
+
+                {/* Botón para tomar foto (cámara) */}
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  capture="environment"
+                  onChange={(e) => handleImageSelect(e, section.id)} 
+                  style={{display: 'none'}} 
+                  id={`camera-upload-${section.id}`}
+                />
+                <label htmlFor={`camera-upload-${section.id}`} className="btn btn-primary" style={{fontSize: '0.85rem'}}>
+                  <Camera size={16} /> Tomar Foto
+                </label>
+              </div>
             </div>
 
             {/* Preview de Imágenes */}
