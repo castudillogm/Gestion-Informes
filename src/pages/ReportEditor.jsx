@@ -25,6 +25,7 @@ export default function ReportEditor({ user }) {
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareEmail, setShareEmail] = useState('');
   const [shareRole, setShareRole] = useState('editor');
+  const [fullScreenImage, setFullScreenImage] = useState(null);
   const autoSaveTimerRef = useRef(null);
 
   const isOwner = report.userId === user.uid || id === 'new';
@@ -676,7 +677,12 @@ ${section.originalComment}`;
                     }}>
                       {imgIndex + 1}
                     </div>
-                    <img src={imgUrl} alt={`Foto ${imgIndex + 1}`} style={{width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px', border: '1px solid #ddd'}} />
+                    <img 
+                      src={imgUrl} 
+                      alt={`Foto ${imgIndex + 1}`} 
+                      style={{width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px', border: '1px solid #ddd', cursor: 'pointer'}} 
+                      onClick={() => setFullScreenImage(imgUrl)}
+                    />
                     {!isViewer && (
                       <button 
                         onClick={() => removeImage(section.id, imgIndex)}
@@ -942,6 +948,33 @@ ${section.originalComment}`;
             {/* Espaciador para equilibrar el botón X */}
             <div style={{width: '50px'}}></div>
           </div>
+        </div>
+      )}
+
+      {/* Modal Imagen Pantalla Completa */}
+      {fullScreenImage && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.9)', zIndex: 9999,
+          display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '2rem'
+        }} onClick={() => setFullScreenImage(null)}>
+          <button 
+            onClick={() => setFullScreenImage(null)}
+            style={{
+              position: 'absolute', top: '20px', right: '20px', 
+              background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', 
+              width: '40px', height: '40px', display: 'flex', justifyContent: 'center', alignItems: 'center',
+              color: 'white', cursor: 'pointer'
+            }}
+          >
+            <X size={24} />
+          </button>
+          <img 
+            src={fullScreenImage} 
+            alt="Vista en grande" 
+            style={{maxWidth: '90%', maxHeight: '90%', objectFit: 'contain', borderRadius: '8px'}} 
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
     </div>
