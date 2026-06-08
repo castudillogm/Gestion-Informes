@@ -26,6 +26,7 @@ export default function ReportEditor({ user }) {
   const [shareEmail, setShareEmail] = useState('');
   const [shareRole, setShareRole] = useState('editor');
   const [fullScreenImage, setFullScreenImage] = useState(null);
+  const [deletedSectionInfo, setDeletedSectionInfo] = useState(null);
   const autoSaveTimerRef = useRef(null);
 
   const isOwner = report.userId === user.uid || id === 'new';
@@ -280,12 +281,53 @@ export default function ReportEditor({ user }) {
 
   const removeSection = (sectionId) => {
     if (isViewer) return;
+    
+    const index = report.sections.findIndex(s => s.id === sectionId);
+    const sectionToRestore = report.sections[index];
+    
+    if (deletedSectionInfo?.timerId) clearTimeout(deletedSectionInfo.timerId);
+    const timerId = setTimeout(() => {
+      setDeletedSectionInfo(null);
+    }, 120000); // 2 minutos
+    
+    setDeletedSectionInfo({ section: sectionToRestore, index, timerId });
+
     setReport(prev => {
       const updated = { ...prev, sections: prev.sections.filter(s => s.id !== sectionId) };
       triggerAutoSave(updated);
       return updated;
     });
   };
+
+  const undoDeleteSection = () => {
+    if (!deletedSectionInfo || isViewer) return;
+    
+    setReport(prev => {
+      const newSections = [...prev.sections];
+      newSections.splice(deletedSectionInfo.index, 0, deletedSectionInfo.section);
+      const updated = { ...prev, sections: newSections };
+      triggerAutoSave(updated);
+      return updated;
+    });
+    
+    clearTimeout(deletedSectionInfo.timerId);
+    setDeletedSectionInfo(null);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        if (deletedSectionInfo && !isViewer) {
+          if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+            e.preventDefault();
+            undoDeleteSection();
+          }
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [deletedSectionInfo, isViewer]);
 
   const handleImagePaste = (e, sectionId) => {
     const items = e.clipboardData?.items;
@@ -967,6 +1009,33 @@ ${section.originalComment}`;
             {/* Espaciador para equilibrar el botón X */}
             <div style={{width: '50px'}}></div>
           </div>
+        </div>
+      )}
+
+      {/* Toast Deshacer Eliminar */}
+      {deletedSectionInfo && (
+        <div style={{
+          position: 'fixed', bottom: '20px', left: '20px', 
+          backgroundColor: '#323232', color: 'white', padding: '12px 20px', 
+          borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '15px',
+          boxShadow: '0 4px 6px rgba(0,0,0,0.3)', zIndex: 1000
+        }}>
+          <span>Apartado eliminado</span>
+          <button onClick={undoDeleteSection} style={{
+            background: 'transparent', border: 'none', color: '#4CAF50', 
+            fontWeight: 'bold', cursor: 'pointer', padding: 0
+          }}>
+            Deshacer (Ctrl+Z)
+          </button>
+          <button onClick={() => {
+            clearTimeout(deletedSectionInfo.timerId);
+            setDeletedSectionInfo(null);
+          }} style={{
+            background: 'transparent', border: 'none', color: '#999', 
+            cursor: 'pointer', padding: '0 5px'
+          }}>
+            <X size={16} />
+          </button>
         </div>
       )}
 
