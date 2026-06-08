@@ -22,6 +22,7 @@ export default function ReportEditor({ user }) {
 
   const recognitionRef = useRef(null);
   const [listeningSection, setListeningSection] = useState(null);
+  const [interimTranscript, setInterimTranscript] = useState('');
 
   const toggleListening = (sectionId) => {
     if (listeningSection === sectionId) {
@@ -29,12 +30,14 @@ export default function ReportEditor({ user }) {
         recognitionRef.current.stop();
       }
       setListeningSection(null);
+      setInterimTranscript('');
       return;
     }
 
     if (recognitionRef.current) {
       recognitionRef.current.stop();
     }
+    setInterimTranscript('');
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -49,11 +52,18 @@ export default function ReportEditor({ user }) {
 
     recognition.onresult = (event) => {
       let finalTranscript = '';
+      let currentInterim = '';
+      
       for (let i = event.resultIndex; i < event.results.length; ++i) {
         if (event.results[i].isFinal) {
           finalTranscript += event.results[i][0].transcript;
+        } else {
+          currentInterim += event.results[i][0].transcript;
         }
       }
+      
+      setInterimTranscript(currentInterim);
+
       if (finalTranscript) {
         setReport(prevReport => {
           const newSections = prevReport.sections.map(s => {
@@ -71,10 +81,12 @@ export default function ReportEditor({ user }) {
     recognition.onerror = (event) => {
       console.error("Error de voz:", event.error);
       setListeningSection(null);
+      setInterimTranscript('');
     };
 
     recognition.onend = () => {
       setListeningSection(null);
+      setInterimTranscript('');
     };
 
     recognition.start();
@@ -426,8 +438,15 @@ export default function ReportEditor({ user }) {
               </div>
               <textarea 
                 className="form-control" 
-                value={section.originalComment}
-                onChange={(e) => updateSection(section.id, 'originalComment', e.target.value)}
+                value={listeningSection === section.id && interimTranscript 
+                  ? section.originalComment + (section.originalComment && !section.originalComment.endsWith(' ') ? ' ' : '') + interimTranscript 
+                  : section.originalComment}
+                onChange={(e) => {
+                  if (listeningSection !== section.id) {
+                    updateSection(section.id, 'originalComment', e.target.value);
+                  }
+                }}
+                readOnly={listeningSection === section.id}
                 placeholder="Escribe o dicta lo que observas en las fotos..."
                 style={{minHeight: '100px'}}
               />
