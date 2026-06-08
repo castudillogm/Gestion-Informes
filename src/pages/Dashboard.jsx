@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { auth, db } from '../firebase';
-import { collection, query, where, getDocs, orderBy, updateDoc, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, updateDoc, doc, addDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
-import { LogOut, Settings, Plus, FileText, Calendar, Edit, CheckSquare, Square, X, Download, Sparkles, Share2, Users, Link as LinkIcon } from 'lucide-react';
+import { LogOut, Settings, Plus, FileText, CheckSquare, Square, X, Download, Sparkles, Share2, Users, Link as LinkIcon } from 'lucide-react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { jsPDF } from 'jspdf';
 
@@ -80,6 +80,32 @@ export default function Dashboard({ user }) {
     setSelectedReports(prev => 
       prev.includes(reportId) ? prev.filter(id => id !== reportId) : [...prev, reportId]
     );
+  };
+
+  const handleCreateReport = async () => {
+    try {
+      setLoading(true);
+      const newReport = {
+        title: 'Nuevo Informe',
+        reportDate: new Date().toISOString().split('T')[0],
+        userId: user.uid,
+        collaborators: [],
+        roles: {},
+        publicAccess: 'restricted',
+        sections: [{ 
+          id: Date.now().toString(), title: 'Apartado', images: [], originalComment: '', formalComment: '',
+          createdBy: { name: user.displayName || 'Usuario', photoURL: user.photoURL || '', email: user.email }
+        }],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      const docRef = await addDoc(collection(db, 'reports'), newReport);
+      navigate(`/report/${docRef.id}`);
+    } catch (e) {
+      console.error(e);
+      alert("Error creando el informe.");
+      setLoading(false);
+    }
   };
 
   const generateSummary = async () => {
@@ -220,7 +246,8 @@ ${contentToSummarize}`;
       setShareReport({ ...shareReport, collaborators: newCollaborators, roles: newRoles });
       setShareEmail('');
       alert("Usuario invitado correctamente.");
-    } catch (e) {
+    } catch (error) {
+      console.error(error);
       alert("Error al compartir.");
     }
   };
@@ -232,7 +259,8 @@ ${contentToSummarize}`;
       await updateDoc(doc(db, 'reports', shareReport.id), { publicAccess: val });
       setReports(reports.map(r => r.id === shareReport.id ? { ...r, publicAccess: val } : r));
       setShareReport({ ...shareReport, publicAccess: val });
-    } catch (e) {
+    } catch (error) {
+      console.error(error);
       alert("Error al cambiar acceso.");
     }
   };
@@ -277,7 +305,7 @@ ${contentToSummarize}`;
             <button onClick={() => { setShowSummaryModal(true); setSelectedReports([]); setSummaryText(''); }} className="btn btn-secondary">
               <Sparkles size={20} /> Generar Resumen General
             </button>
-            <button onClick={() => navigate('/report/new')} className="btn btn-primary">
+            <button onClick={handleCreateReport} className="btn btn-primary">
               <Plus size={20} /> Nuevo Informe
             </button>
           </div>

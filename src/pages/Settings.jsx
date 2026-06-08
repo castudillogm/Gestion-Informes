@@ -1,24 +1,11 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { ArrowLeft, Key, Save, Book } from 'lucide-react';
 
 export default function Settings() {
-  const [apiKey, setApiKey] = useState('');
-  const [glossary, setGlossary] = useState('');
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('geminiApiKey') || '');
+  const [glossary, setGlossary] = useState(() => localStorage.getItem('companyGlossary') || '');
   const [saved, setSaved] = useState(false);
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    // Cargar la API key guardada si existe
-    const storedKey = localStorage.getItem('geminiApiKey');
-    if (storedKey) {
-      setApiKey(storedKey);
-    }
-    const storedGlossary = localStorage.getItem('companyGlossary');
-    if (storedGlossary) {
-      setGlossary(storedGlossary);
-    }
-  }, []);
 
   const handleSave = (e) => {
     e.preventDefault();

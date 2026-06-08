@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { db, storage } from '../firebase';
-import { doc, getDoc, setDoc, collection, addDoc, updateDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db } from '../firebase';
+import { doc, collection, addDoc, updateDoc, serverTimestamp, onSnapshot, query, where, deleteDoc } from 'firebase/firestore';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { ArrowLeft, Save, FileDown, Plus, Trash2, Image as ImageIcon, Sparkles, X, Mic, MicOff, Camera, Share2, Users, Link as LinkIcon, User } from 'lucide-react';
+import { ArrowLeft, Save, FileDown, Plus, Trash2, Image as ImageIcon, Sparkles, X, Mic, MicOff, Camera, Share2, Users, Link as LinkIcon } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 
@@ -28,14 +27,14 @@ export default function ReportEditor({ user }) {
   const [fullScreenImage, setFullScreenImage] = useState(null);
   const [deletedSectionInfo, setDeletedSectionInfo] = useState(null);
   const [uploadingImages, setUploadingImages] = useState({});
+  const [reportImages, setReportImages] = useState({});
   const autoSaveTimerRef = useRef(null);
 
-  const isOwner = report.userId === user.uid || id === 'new';
+  const isOwner = report.userId === user.uid;
   const role = isOwner ? 'owner' : (report.roles?.[user.email] || 'viewer');
   const isViewer = role === 'viewer';
 
   const triggerAutoSave = (newReportData) => {
-    if (id === 'new') return;
     if (isViewer) return;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     
@@ -67,9 +66,10 @@ export default function ReportEditor({ user }) {
   const canvasRef = useRef(null);
 
   useEffect(() => {
+    const videoElement = videoRef.current;
     return () => {
-      if (videoRef.current && videoRef.current.srcObject) {
-        videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+      if (videoElement && videoElement.srcObject) {
+        videoElement.srcObject.getTracks().forEach(track => track.stop());
       }
     };
   }, []);
@@ -198,25 +198,8 @@ export default function ReportEditor({ user }) {
   };
 
   useEffect(() => {
-    if (id === 'new') {
-      setReport({
-        title: 'Nuevo Informe',
-        reportDate: new Date().toISOString().split('T')[0],
-        userId: user.uid,
-        collaborators: [],
-        roles: {},
-        publicAccess: 'restricted',
-        sections: [{ 
-          id: Date.now().toString(), title: 'Apartado', images: [], originalComment: '', formalComment: '',
-          createdBy: { name: user.displayName || 'Usuario', photoURL: user.photoURL || '', email: user.email }
-        }]
-      });
-      setLoading(false);
-      return;
-    }
-    
     const docRef = doc(db, 'reports', id);
-    const unsubscribe = onSnapshot(docRef, async (docSnap) => {
+    const unsubscribeReport = onSnapshot(docRef, async (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         const isOwner = data.userId === user.uid;
@@ -250,7 +233,19 @@ export default function ReportEditor({ user }) {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    const imagesQuery = query(collection(db, 'reportImages'), where('reportId', '==', id));
+    const unsubscribeImages = onSnapshot(imagesQuery, (snapshot) => {
+      const imagesMap = {};
+      snapshot.docs.forEach(doc => {
+        imagesMap[doc.id] = doc.data().dataUrl;
+      });
+      setReportImages(imagesMap);
+    });
+
+    return () => {
+      unsubscribeReport();
+      unsubscribeImages();
+    };
   }, [id, navigate, user.uid, user.email]);
 
   const handleTitleChange = (e) => {
@@ -328,6 +323,7 @@ export default function ReportEditor({ user }) {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deletedSectionInfo, isViewer]);
 
   const handleImagePaste = (e, sectionId) => {
@@ -381,15 +377,6 @@ export default function ReportEditor({ user }) {
     });
   };
 
-  const dataURLtoBlob = (dataurl) => {
-    let arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1],
-        bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
-    while(n--){
-        u8arr[n] = bstr.charCodeAt(n);
-    }
-    return new Blob([u8arr], {type:mime});
-  }
-
   const uploadImage = async (file, sectionId) => {
     let compressedDataUrl = null;
     try {
@@ -401,18 +388,16 @@ export default function ReportEditor({ user }) {
         [sectionId]: [...(prev[sectionId] || []), compressedDataUrl]
       }));
 
-      const blob = dataURLtoBlob(compressedDataUrl);
+      const docRef = await addDoc(collection(db, 'reportImages'), {
+        reportId: id,
+        sectionId: sectionId,
+        dataUrl: compressedDataUrl,
+        createdAt: serverTimestamp()
+      });
       
-      const reportId = id !== 'new' ? id : 'temp_report';
-      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.jpg`;
-      const imageRef = ref(storage, `reports/${reportId}/${sectionId}/${fileName}`);
-      
-      await uploadBytes(imageRef, blob);
-      const downloadURL = await getDownloadURL(imageRef);
-      
-      updateSection(sectionId, 'images', downloadURL, true);
+      updateSection(sectionId, 'images', docRef.id, true);
     } catch (error) {
-      console.error("Error al subir la imagen a Storage:", error);
+      console.error("Error guardando la imagen:", error);
       alert("Hubo un error al guardar la imagen. Por favor, intenta de nuevo.");
     } finally {
       if (compressedDataUrl) {
@@ -425,15 +410,25 @@ export default function ReportEditor({ user }) {
     }
   };
 
-  const removeImage = (sectionId, imageIndex) => {
+  const removeImage = async (sectionId, imageIndex) => {
     const section = report.sections.find(s => s.id === sectionId);
+    const imageId = section.images[imageIndex];
+    
+    try {
+      await deleteDoc(doc(db, 'reportImages', imageId));
+    } catch (error) {
+      console.error("Error al eliminar la imagen de Firestore:", error);
+    }
+
     const newImages = [...section.images];
     newImages.splice(imageIndex, 1);
     
     const newSections = report.sections.map(s => 
       s.id === sectionId ? { ...s, images: newImages } : s
     );
-    setReport({ ...report, sections: newSections });
+    const updated = { ...report, sections: newSections };
+    setReport(updated);
+    triggerAutoSave(updated);
   };
 
   const updateSection = (sectionId, field, value, isArray = false) => {
@@ -543,7 +538,8 @@ ${section.originalComment}`;
       });
       setShareEmail('');
       alert("Usuario invitado correctamente.");
-    } catch (e) {
+    } catch (error) {
+      console.error(error);
       alert("Error al compartir.");
     }
   };
@@ -566,17 +562,11 @@ ${section.originalComment}`;
         title: report.title,
         reportDate: report.reportDate || new Date().toISOString().split('T')[0],
         userId: user.uid,
-        sections: report.sections, // Ya están comprimidas
+        sections: report.sections,
         updatedAt: serverTimestamp()
       };
 
-      if (id === 'new') {
-        reportData.createdAt = serverTimestamp();
-        const docRef = await addDoc(collection(db, 'reports'), reportData);
-        navigate(`/report/${docRef.id}`, { replace: true });
-      } else {
-        await updateDoc(doc(db, 'reports', id), reportData);
-      }
+      await updateDoc(doc(db, 'reports', id), reportData);
       alert('Informe guardado correctamente');
     } catch (error) {
       console.error("Error saving report:", error);
@@ -751,7 +741,9 @@ ${section.originalComment}`;
             {/* Preview de Imágenes */}
             {(section.images.length > 0 || (uploadingImages[section.id] && uploadingImages[section.id].length > 0)) && (
               <div style={{display: 'flex', gap: '1rem', overflowX: 'auto', paddingBottom: '1rem', marginBottom: '1.5rem'}}>
-                {section.images.map((imgUrl, imgIndex) => (
+                {section.images.map((imgId, imgIndex) => {
+                  const imgUrl = reportImages[imgId] || 'https://via.placeholder.com/150?text=Cargando...';
+                  return (
                   <div key={imgIndex} style={{position: 'relative', minWidth: '150px', height: '150px'}}>
                     <div style={{
                       position: 'absolute', top: 5, left: 5, background: 'var(--primary-color)', color: 'white', 
@@ -774,7 +766,8 @@ ${section.originalComment}`;
                       </button>
                     )}
                   </div>
-                ))}
+                  );
+                })}
                 {/* Imágenes Subiendo */}
                 {(uploadingImages[section.id] || []).map((imgUrl, imgIndex) => (
                   <div key={`uploading-${imgIndex}`} style={{position: 'relative', minWidth: '150px', height: '150px', opacity: 0.6}}>
@@ -899,7 +892,10 @@ ${section.originalComment}`;
             {/* Grid de Imágenes para el PDF */}
             {section.images.length > 0 && (
               <div style={{display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '15px'}}>
-                {section.images.map((imgUrl, imgIndex) => (
+                {section.images.map((imgId, imgIndex) => {
+                  const imgUrl = reportImages[imgId];
+                  if (!imgUrl) return null;
+                  return (
                   <div key={`pdf-img-${imgIndex}`} style={{width: '48%', position: 'relative'}}>
                     <div style={{
                       position: 'absolute', top: 5, left: 5, background: 'rgba(0,0,0,0.7)', color: 'white', 
@@ -909,7 +905,7 @@ ${section.originalComment}`;
                     </div>
                     <img src={imgUrl} style={{width: '100%', height: 'auto', borderRadius: '4px', border: '1px solid #ccc'}} />
                   </div>
-                ))}
+                )})}
               </div>
             )}
 
