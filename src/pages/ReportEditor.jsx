@@ -339,8 +339,27 @@ export default function ReportEditor({ user }) {
   };
 
   const uploadImage = async (file, sectionId) => {
-    const compressedDataUrl = await compressImage(file);
-    updateSection(sectionId, 'images', compressedDataUrl, true);
+    try {
+      setSaving(true);
+      const compressedDataUrl = await compressImage(file);
+      
+      const response = await fetch(compressedDataUrl);
+      const blob = await response.blob();
+      
+      const reportId = id !== 'new' ? id : 'temp_report';
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.jpg`;
+      const imageRef = ref(storage, `reports/${reportId}/${sectionId}/${fileName}`);
+      
+      await uploadBytes(imageRef, blob);
+      const downloadURL = await getDownloadURL(imageRef);
+      
+      updateSection(sectionId, 'images', downloadURL, true);
+    } catch (error) {
+      console.error("Error al subir la imagen a Storage:", error);
+      alert("Hubo un error al guardar la imagen. Por favor, intenta de nuevo.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const removeImage = (sectionId, imageIndex) => {
