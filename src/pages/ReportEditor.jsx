@@ -243,7 +243,7 @@ export default function ReportEditor({ user }) {
       updateSection(sectionId, 'formalComment', 'Redactando...'); // Loading state
       
       const genAI = new GoogleGenerativeAI(apiKey.trim());
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
       const glossary = localStorage.getItem('companyGlossary');
       let glossaryContext = '';

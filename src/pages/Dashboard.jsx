@@ -84,7 +84,7 @@ export default function Dashboard({ user }) {
 
     try {
       const genAI = new GoogleGenerativeAI(apiKey.trim());
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
       // Gather content from selected reports
       const selectedDocs = reports.filter(r => selectedReports.includes(r.id));
