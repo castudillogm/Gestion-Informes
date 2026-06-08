@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { auth, db } from '../firebase';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, updateDoc, doc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
-import { LogOut, Settings, Plus, FileText, Calendar, Edit, CheckSquare, Square, X, Download, Sparkles } from 'lucide-react';
+import { LogOut, Settings, Plus, FileText, Calendar, Edit, CheckSquare, Square, X, Download, Sparkles, Share2, Users, Link as LinkIcon } from 'lucide-react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { jsPDF } from 'jspdf';
 
@@ -14,6 +14,11 @@ export default function Dashboard({ user }) {
   const [selectedReports, setSelectedReports] = useState([]);
   const [generatingSummary, setGeneratingSummary] = useState(false);
   const [summaryText, setSummaryText] = useState('');
+  
+  // Share Modal States
+  const [shareReport, setShareReport] = useState(null);
+  const [shareEmail, setShareEmail] = useState('');
+  const [shareRole, setShareRole] = useState('editor');
   
   const navigate = useNavigate();
 
@@ -194,6 +199,51 @@ ${contentToSummarize}`;
     }
   };
 
+  const handleShare = async () => {
+    if (!shareEmail.trim() || !shareReport) return;
+    const email = shareEmail.trim().toLowerCase();
+    
+    const newCollaborators = [...(shareReport.collaborators || [])];
+    if (!newCollaborators.includes(email)) newCollaborators.push(email);
+    
+    const newRoles = { ...(shareReport.roles || {}) };
+    newRoles[email] = shareRole;
+
+    try {
+      await updateDoc(doc(db, 'reports', shareReport.id), {
+        collaborators: newCollaborators,
+        roles: newRoles
+      });
+      
+      // Update local state
+      setReports(reports.map(r => r.id === shareReport.id ? { ...r, collaborators: newCollaborators, roles: newRoles } : r));
+      setShareReport({ ...shareReport, collaborators: newCollaborators, roles: newRoles });
+      setShareEmail('');
+      alert("Usuario invitado correctamente.");
+    } catch (e) {
+      alert("Error al compartir.");
+    }
+  };
+  
+  const handlePublicAccessChange = async (e) => {
+    if (!shareReport) return;
+    const val = e.target.value;
+    try {
+      await updateDoc(doc(db, 'reports', shareReport.id), { publicAccess: val });
+      setReports(reports.map(r => r.id === shareReport.id ? { ...r, publicAccess: val } : r));
+      setShareReport({ ...shareReport, publicAccess: val });
+    } catch (e) {
+      alert("Error al cambiar acceso.");
+    }
+  };
+  
+  const copyLink = () => {
+    if (!shareReport) return;
+    const url = `${window.location.origin}/report/${shareReport.id}`;
+    navigator.clipboard.writeText(url);
+    alert("Enlace copiado al portapapeles.");
+  };
+
   return (
     <div className="app-container">
       {/* Navbar */}
@@ -272,9 +322,16 @@ ${contentToSummarize}`;
                     </div>
                   </div>
                   
-                  <button onClick={() => navigate(`/report/${report.id}`)} className="btn btn-secondary" style={{padding: '0.6rem 1.2rem', whiteSpace: 'nowrap'}}>
-                    {role === 'Lector' ? 'Ver Informe' : 'Abrir / Editar'}
-                  </button>
+                  <div style={{display: 'flex', gap: '0.5rem', alignItems: 'center'}}>
+                    {role === 'Propietario' && (
+                      <button onClick={() => setShareReport(report)} className="btn btn-secondary" style={{padding: '0.4rem 0.6rem', fontSize: '0.85rem', color: 'var(--primary-color)', borderColor: 'var(--primary-color)'}}>
+                        <Share2 size={16} /> Compartir
+                      </button>
+                    )}
+                    <button onClick={() => navigate(`/report/${report.id}`)} className="btn btn-secondary" style={{padding: '0.4rem 0.8rem', fontSize: '0.85rem', whiteSpace: 'nowrap'}}>
+                      {role === 'Lector' ? 'Ver' : 'Editar'}
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -371,6 +428,78 @@ ${contentToSummarize}`;
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal Compartir (Dashboard) */}
+      {shareReport && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000,
+          display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem'
+        }}>
+          <div className="glass-panel" style={{width: '100%', maxWidth: '500px', backgroundColor: 'white', padding: '2rem'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem'}}>
+              <h2 style={{margin: 0, color: 'var(--primary-color)'}}><Users size={24} style={{verticalAlign: 'middle', marginRight: '0.5rem'}} /> Compartir Informe</h2>
+              <button onClick={() => setShareReport(null)} style={{background: 'none', border: 'none', cursor: 'pointer'}}>
+                <X size={24} color="#666" />
+              </button>
+            </div>
+            
+            <div style={{marginBottom: '2rem'}}>
+              <label className="form-label">Invitar por correo electrónico</label>
+              <div style={{display: 'flex', gap: '0.5rem'}}>
+                <input 
+                  type="email" 
+                  value={shareEmail}
+                  onChange={e => setShareEmail(e.target.value)}
+                  placeholder="ejemplo@gmail.com" 
+                  className="form-control" 
+                />
+                <select value={shareRole} onChange={e => setShareRole(e.target.value)} className="form-control" style={{width: 'auto'}}>
+                  <option value="editor">Editor</option>
+                  <option value="viewer">Lector</option>
+                </select>
+                <button onClick={handleShare} className="btn btn-primary">Invitar</button>
+              </div>
+            </div>
+
+            <div style={{marginBottom: '2rem'}}>
+              <label className="form-label">Acceso General</label>
+              <div style={{display: 'flex', gap: '1rem', alignItems: 'center'}}>
+                <div style={{flex: 1}}>
+                  <select value={shareReport.publicAccess || 'restricted'} onChange={handlePublicAccessChange} className="form-control">
+                    <option value="restricted">Restringido (Solo invitados)</option>
+                    <option value="viewer">Cualquier persona con el enlace (Lector)</option>
+                    <option value="editor">Cualquier persona con el enlace (Editor)</option>
+                  </select>
+                </div>
+                <button onClick={copyLink} className="btn btn-secondary" style={{display: 'flex', gap: '0.5rem', alignItems: 'center'}}>
+                  <LinkIcon size={16} /> Copiar Enlace
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="form-label">Personas con acceso</label>
+              <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
+                <div style={{display: 'flex', justifyContent: 'space-between', padding: '0.5rem', borderBottom: '1px solid #eee'}}>
+                  <span>{shareReport.userId === user.uid ? user.email : shareReport.userId} <strong>(Propietario)</strong></span>
+                  <span style={{color: 'var(--text-light)'}}>Propietario</span>
+                </div>
+                {shareReport.collaborators?.map(email => (
+                  <div key={email} style={{display: 'flex', justifyContent: 'space-between', padding: '0.5rem', borderBottom: '1px solid #eee'}}>
+                    <span>{email}</span>
+                    <span style={{color: 'var(--text-light)'}}>{shareReport.roles?.[email] === 'editor' ? 'Editor' : 'Lector'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{display: 'flex', justifyContent: 'flex-end', marginTop: '2rem'}}>
+              <button onClick={() => setShareReport(null)} className="btn btn-primary">Hecho</button>
+            </div>
           </div>
         </div>
       )}
