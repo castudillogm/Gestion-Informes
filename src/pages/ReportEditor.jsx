@@ -242,7 +242,7 @@ export default function ReportEditor({ user }) {
     try {
       updateSection(sectionId, 'formalComment', 'Redactando...'); // Loading state
       
-      const genAI = new GoogleGenerativeAI(apiKey);
+      const genAI = new GoogleGenerativeAI(apiKey.trim());
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
       const glossary = localStorage.getItem('companyGlossary');
@@ -260,7 +260,7 @@ export default function ReportEditor({ user }) {
       updateSection(sectionId, 'formalComment', text);
     } catch (error) {
       console.error("Error al generar el texto:", error);
-      updateSection(sectionId, 'formalComment', 'Error al generar el texto. Verifica tu API Key.');
+      updateSection(sectionId, 'formalComment', `Error al generar el texto: ${error.message || error}. Verifica tu API Key o conexión.`);
     }
   };
 

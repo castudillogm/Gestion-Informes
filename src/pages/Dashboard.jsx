@@ -83,7 +83,7 @@ export default function Dashboard({ user }) {
     setSummaryText('');
 
     try {
-      const genAI = new GoogleGenerativeAI(apiKey);
+      const genAI = new GoogleGenerativeAI(apiKey.trim());
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
       // Gather content from selected reports
@@ -125,7 +125,7 @@ ${contentToSummarize}`;
       setSummaryText(text);
     } catch (error) {
       console.error("Error al generar resumen:", error);
-      alert("Error al generar el resumen. Revisa tu conexión y API Key.");
+      alert(`Error al generar el resumen: ${error.message || error}. Por favor, verifica tu conexión y que tu API Key sea correcta.`);
     } finally {
       setGeneratingSummary(false);
     }
