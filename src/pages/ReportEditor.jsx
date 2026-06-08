@@ -25,6 +25,73 @@ export default function ReportEditor({ user }) {
   const [listeningSection, setListeningSection] = useState(null);
   const [interimTranscript, setInterimTranscript] = useState('');
 
+  // Estados para la cámara integrada
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [cameraSectionId, setCameraSectionId] = useState(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (videoRef.current && videoRef.current.srcObject) {
+        videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
+
+  const openCamera = async (sectionId) => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' } // Prioriza la cámara trasera
+      });
+      setCameraSectionId(sectionId);
+      setIsCameraOpen(true);
+      
+      // Esperar a que React renderice el elemento <video>
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      }, 100);
+    } catch (err) {
+      console.error("Error al acceder a la cámara:", err);
+      alert("No se pudo acceder a la cámara. Asegúrate de haber dado los permisos necesarios en tu navegador.");
+    }
+  };
+
+  const closeCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const tracks = videoRef.current.srcObject.getTracks();
+      tracks.forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setIsCameraOpen(false);
+    setCameraSectionId(null);
+  };
+
+  const takePhoto = () => {
+    if (!videoRef.current || !canvasRef.current || !cameraSectionId) return;
+    
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    
+    // Configurar el canvas al tamaño del video real
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Obtener imagen en base64 (JPEG comprimido)
+    const imageDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    
+    // Añadir al apartado correspondiente
+    updateSection(cameraSectionId, 'images', imageDataUrl, true);
+    
+    // Cerrar cámara
+    closeCamera();
+  };
+
   const toggleListening = (sectionId) => {
     if (listeningSection === sectionId) {
       if (recognitionRef.current) {
@@ -459,18 +526,14 @@ ${section.originalComment}`;
                   <ImageIcon size={16} /> Seleccionar Archivos
                 </label>
 
-                {/* Botón para tomar foto (cámara) */}
-                <input 
-                  type="file" 
-                  accept="image/*" 
-                  capture="environment"
-                  onChange={(e) => handleImageSelect(e, section.id)} 
-                  style={{display: 'none'}} 
-                  id={`camera-upload-${section.id}`}
-                />
-                <label htmlFor={`camera-upload-${section.id}`} className="btn btn-primary" style={{fontSize: '0.85rem'}}>
+                {/* Botón para tomar foto (cámara interna) */}
+                <button 
+                  onClick={(e) => { e.stopPropagation(); openCamera(section.id); }}
+                  className="btn btn-primary" 
+                  style={{fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem'}}
+                >
                   <Camera size={16} /> Tomar Foto
-                </label>
+                </button>
               </div>
             </div>
 
@@ -629,6 +692,50 @@ ${section.originalComment}`;
         ))}
       </div>
 
+      {/* --- VISOR DE CÁMARA (WEBRTC) --- */}
+      {isCameraOpen && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: '#000', zIndex: 9999,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <video 
+            ref={videoRef} 
+            autoPlay 
+            playsInline 
+            style={{width: '100%', height: '80%', objectFit: 'cover'}}
+          />
+          <canvas ref={canvasRef} style={{display: 'none'}} />
+          
+          <div style={{
+            position: 'absolute', bottom: '5%', left: 0, right: 0,
+            display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '3rem'
+          }}>
+            <button 
+              onClick={closeCamera}
+              style={{
+                background: 'rgba(255,255,255,0.2)', color: 'white', 
+                border: 'none', borderRadius: '50%', width: '50px', height: '50px',
+                display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer'
+              }}
+            >
+              <X size={24} />
+            </button>
+            <button 
+              onClick={takePhoto}
+              style={{
+                background: 'white', border: '4px solid #ccc', borderRadius: '50%', 
+                width: '70px', height: '70px', cursor: 'pointer',
+                display: 'flex', justifyContent: 'center', alignItems: 'center'
+              }}
+            >
+              <div style={{background: 'white', borderRadius: '50%', width: '56px', height: '56px', border: '2px solid #ddd'}}></div>
+            </button>
+            {/* Espaciador para equilibrar el botón X */}
+            <div style={{width: '50px'}}></div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
