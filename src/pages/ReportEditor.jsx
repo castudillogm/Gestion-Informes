@@ -229,6 +229,18 @@ export default function ReportEditor({ user }) {
     setReport({ ...report, sections: newSections });
   };
 
+  const acceptFormalComment = (sectionId) => {
+    setReport(prevReport => {
+      const newSections = prevReport.sections.map(s => {
+        if (s.id === sectionId && s.formalComment && s.formalComment !== 'Redactando...') {
+          return { ...s, originalComment: s.formalComment, formalComment: '' };
+        }
+        return s;
+      });
+      return { ...prevReport, sections: newSections };
+    });
+  };
+
   const enhanceText = async (sectionId) => {
     const section = report.sections.find(s => s.id === sectionId);
     if (!section.originalComment.trim()) return;
@@ -265,7 +277,12 @@ export default function ReportEditor({ user }) {
         glossaryContext = `\n\nIMPORTANTE: El usuario ha dictado el texto original usando un micrófono, por lo que es altamente probable que haya errores tipográficos o palabras transcritas fonéticamente de forma incorrecta. Usa el siguiente GLOSARIO TÉCNICO DE LA EMPRESA para identificar esas palabras mal transcritas y corregirlas en tu redacción final:\n--- GLOSARIO ---\n${glossary}\n----------------\n`;
       }
 
-      const prompt = `Actúa como un experto redactor de informes técnicos. Mejora la redacción del siguiente comentario para que suene muy formal, claro y profesional para un informe técnico. NO inventes ningún dato nuevo, NO agregues conclusiones que no estén en el texto original. Solo mejora la gramática, corrige errores de transcripción de voz y ajusta el tono.${glossaryContext}\n\nTEXTO ORIGINAL A MEJORAR:\n${section.originalComment}`;
+      const prompt = `Actúa como un experto redactor de informes técnicos. Mejora la redacción del siguiente comentario para que suene muy formal, claro y profesional para un informe técnico. NO inventes ningún dato nuevo, NO agregues conclusiones que no estén en el texto original. Solo mejora la gramática, corrige errores de transcripción de voz y ajusta el tono.
+
+MUY IMPORTANTE: Devuelve ÚNICA Y EXCLUSIVAMENTE el texto mejorado. NO incluyas preámbulos, NO incluyas introducciones como "A continuación se presenta..." ni explicaciones al final. Solo quiero la redacción final.${glossaryContext}
+
+TEXTO ORIGINAL A MEJORAR:
+${section.originalComment}`;
 
       const result = await model.generateContent(prompt);
       const response = await result.response;
@@ -521,8 +538,19 @@ export default function ReportEditor({ user }) {
 
             {/* Comentario Formal */}
             {section.formalComment && (
-              <div className="form-group">
-                <label className="form-label">Redacción Formal (Generada por IA):</label>
+              <div className="form-group" style={{marginTop: '1rem'}}>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
+                  <label className="form-label" style={{margin: 0}}>Redacción Formal (Generada por IA):</label>
+                  {section.formalComment !== 'Redactando...' && (
+                    <button 
+                      onClick={() => acceptFormalComment(section.id)} 
+                      className="btn btn-secondary" 
+                      style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderColor: 'var(--primary-color)', color: 'var(--primary-color)'}}
+                    >
+                      ✓ Reemplazar texto original
+                    </button>
+                  )}
+                </div>
                 <textarea 
                   className="form-control" 
                   value={section.formalComment}
