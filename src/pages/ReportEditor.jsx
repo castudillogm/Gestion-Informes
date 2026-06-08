@@ -243,7 +243,21 @@ export default function ReportEditor({ user }) {
       updateSection(sectionId, 'formalComment', 'Redactando...'); // Loading state
       
       const genAI = new GoogleGenerativeAI(apiKey.trim());
-      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+      
+      // Obtener lista de modelos disponibles para esta API Key
+      const modelsResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey.trim()}`);
+      if (!modelsResponse.ok) throw new Error("No se pudo conectar para obtener los modelos.");
+      const modelsData = await modelsResponse.json();
+      
+      let targetModel = modelsData.models?.find(m => m.name.includes("flash") && m.supportedGenerationMethods?.includes("generateContent"));
+      if (!targetModel) targetModel = modelsData.models?.find(m => m.name.includes("pro") && m.supportedGenerationMethods?.includes("generateContent"));
+      if (!targetModel) targetModel = modelsData.models?.find(m => m.supportedGenerationMethods?.includes("generateContent"));
+      
+      if (!targetModel) throw new Error("No hay modelos de generación de texto disponibles para tu cuenta.");
+      
+      const modelName = targetModel.name.replace("models/", "");
+      console.log("Usando modelo:", modelName);
+      const model = genAI.getGenerativeModel({ model: modelName });
 
       const glossary = localStorage.getItem('companyGlossary');
       let glossaryContext = '';
