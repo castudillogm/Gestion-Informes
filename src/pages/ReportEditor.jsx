@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { db, storage } from '../firebase';
-import { doc, getDoc, setDoc, collection, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, addDoc, updateDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { ArrowLeft, Save, FileDown, Plus, Trash2, Image as ImageIcon, Sparkles, X, Mic, MicOff, Camera } from 'lucide-react';
+import { ArrowLeft, Save, FileDown, Plus, Trash2, Image as ImageIcon, Sparkles, X, Mic, MicOff, Camera, Share2, Users, Link as LinkIcon, User } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 
@@ -20,6 +20,38 @@ export default function ReportEditor({ user }) {
   const [saving, setSaving] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const pdfRef = useRef();
+
+  // Collaboration states
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareEmail, setShareEmail] = useState('');
+  const [shareRole, setShareRole] = useState('editor');
+  const autoSaveTimerRef = useRef(null);
+
+  const isOwner = report.userId === user.uid || id === 'new';
+  const role = isOwner ? 'owner' : (report.roles?.[user.email] || 'viewer');
+  const isViewer = role === 'viewer';
+
+  const triggerAutoSave = (newReportData) => {
+    if (id === 'new') return;
+    if (isViewer) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    
+    setSaving(true);
+    autoSaveTimerRef.current = setTimeout(async () => {
+      try {
+        await updateDoc(doc(db, 'reports', id), {
+          title: newReportData.title,
+          reportDate: newReportData.reportDate,
+          sections: newReportData.sections,
+          updatedAt: serverTimestamp()
+        });
+      } catch (err) {
+        console.error('Auto-save failed', err);
+      } finally {
+        setSaving(false);
+      }
+    }, 1500);
+  };
 
   const recognitionRef = useRef(null);
   const [listeningSection, setListeningSection] = useState(null);
@@ -163,56 +195,94 @@ export default function ReportEditor({ user }) {
   };
 
   useEffect(() => {
-    const fetchReport = async () => {
-      if (id === 'new') {
-        setReport({
-          title: 'Nuevo Informe',
-          reportDate: new Date().toISOString().split('T')[0],
-          sections: [{ id: Date.now().toString(), title: 'Apartado', images: [], originalComment: '', formalComment: '' }]
-        });
-        setLoading(false);
-        return;
-      }
-      
-      try {
-        const docRef = doc(db, 'reports', id);
-        const docSnap = await getDoc(docRef);
+    if (id === 'new') {
+      setReport({
+        title: 'Nuevo Informe',
+        reportDate: new Date().toISOString().split('T')[0],
+        userId: user.uid,
+        collaborators: [],
+        roles: {},
+        publicAccess: 'restricted',
+        sections: [{ 
+          id: Date.now().toString(), title: 'Apartado', images: [], originalComment: '', formalComment: '',
+          createdBy: { name: user.displayName || 'Usuario', photoURL: user.photoURL || '', email: user.email }
+        }]
+      });
+      setLoading(false);
+      return;
+    }
+    
+    const docRef = doc(db, 'reports', id);
+    const unsubscribe = onSnapshot(docRef, async (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const isOwner = data.userId === user.uid;
+        const isCollab = data.collaborators?.includes(user.email);
         
-        if (docSnap.exists()) {
-          setReport({ id: docSnap.id, ...docSnap.data() });
-        } else {
-          alert('Informe no encontrado');
-          navigate('/');
+        if (!isOwner && !isCollab) {
+          if (data.publicAccess === 'editor' || data.publicAccess === 'viewer') {
+            const newCollabs = [...(data.collaborators || []), user.email];
+            const newRoles = { ...(data.roles || {}) };
+            newRoles[user.email] = data.publicAccess;
+            await updateDoc(docRef, { collaborators: newCollabs, roles: newRoles });
+            data.collaborators = newCollabs;
+            data.roles = newRoles;
+          } else {
+            alert('No tienes permiso para ver este informe.');
+            navigate('/');
+            return;
+          }
         }
-      } catch (error) {
-        console.error("Error al cargar el informe:", error);
-      } finally {
-        setLoading(false);
+        
+        if (!docSnap.metadata.hasPendingWrites) {
+          setReport({ id: docSnap.id, ...data });
+        }
+      } else {
+        alert('Informe no encontrado');
+        navigate('/');
       }
-    };
+      setLoading(false);
+    }, (error) => {
+      console.error("Error fetching report:", error);
+      setLoading(false);
+    });
 
-    fetchReport();
-  }, [id, navigate]);
+    return () => unsubscribe();
+  }, [id, navigate, user.uid, user.email]);
 
   const handleTitleChange = (e) => {
-    setReport({ ...report, title: e.target.value });
+    if (isViewer) return;
+    const updated = { ...report, title: e.target.value };
+    setReport(updated);
+    triggerAutoSave(updated);
   };
 
   const handleDateChange = (e) => {
-    setReport({ ...report, reportDate: e.target.value });
+    if (isViewer) return;
+    const updated = { ...report, reportDate: e.target.value };
+    setReport(updated);
+    triggerAutoSave(updated);
   };
 
   const addSection = () => {
-    setReport({
-      ...report,
-      sections: [...report.sections, { id: Date.now().toString(), title: 'Apartado', images: [], originalComment: '', formalComment: '' }]
+    if (isViewer) return;
+    const newSection = { 
+      id: Date.now().toString(), title: 'Apartado', images: [], originalComment: '', formalComment: '',
+      createdBy: { name: user.displayName || 'Usuario', photoURL: user.photoURL || '', email: user.email }
+    };
+    setReport(prev => {
+      const updated = { ...prev, sections: [...prev.sections, newSection] };
+      triggerAutoSave(updated);
+      return updated;
     });
   };
 
   const removeSection = (sectionId) => {
-    setReport({
-      ...report,
-      sections: report.sections.filter(s => s.id !== sectionId)
+    if (isViewer) return;
+    setReport(prev => {
+      const updated = { ...prev, sections: prev.sections.filter(s => s.id !== sectionId) };
+      triggerAutoSave(updated);
+      return updated;
     });
   };
 
@@ -284,19 +354,25 @@ export default function ReportEditor({ user }) {
   };
 
   const updateSection = (sectionId, field, value, isArray = false) => {
-    const newSections = report.sections.map(s => {
-      if (s.id === sectionId) {
-        if (isArray) {
-          return { ...s, [field]: [...s[field], value] };
+    if (isViewer) return;
+    setReport(prev => {
+      const newSections = prev.sections.map(s => {
+        if (s.id === sectionId) {
+          if (isArray) {
+            return { ...s, [field]: [...s[field], value] };
+          }
+          return { ...s, [field]: value };
         }
-        return { ...s, [field]: value };
-      }
-      return s;
+        return s;
+      });
+      const updated = { ...prev, sections: newSections };
+      triggerAutoSave(updated);
+      return updated;
     });
-    setReport({ ...report, sections: newSections });
   };
 
   const acceptFormalComment = (sectionId) => {
+    if (isViewer) return;
     setReport(prevReport => {
       const newSections = prevReport.sections.map(s => {
         if (s.id === sectionId && s.formalComment && s.formalComment !== 'Redactando...') {
@@ -304,7 +380,9 @@ export default function ReportEditor({ user }) {
         }
         return s;
       });
-      return { ...prevReport, sections: newSections };
+      const updated = { ...prevReport, sections: newSections };
+      triggerAutoSave(updated);
+      return updated;
     });
   };
 
@@ -360,6 +438,42 @@ ${section.originalComment}`;
       console.error("Error al generar el texto:", error);
       updateSection(sectionId, 'formalComment', `Error al generar el texto: ${error.message || error}. Verifica tu API Key o conexión.`);
     }
+  };
+
+  const handleShare = async () => {
+    if (!shareEmail.trim()) return;
+    const email = shareEmail.trim().toLowerCase();
+    
+    const newCollaborators = [...(report.collaborators || [])];
+    if (!newCollaborators.includes(email)) newCollaborators.push(email);
+    
+    const newRoles = { ...(report.roles || {}) };
+    newRoles[email] = shareRole;
+
+    const updated = { ...report, collaborators: newCollaborators, roles: newRoles };
+    setReport(updated);
+    
+    try {
+      await updateDoc(doc(db, 'reports', id), {
+        collaborators: newCollaborators,
+        roles: newRoles
+      });
+      setShareEmail('');
+      alert("Usuario invitado correctamente.");
+    } catch (e) {
+      alert("Error al compartir.");
+    }
+  };
+  
+  const handlePublicAccessChange = async (e) => {
+    const val = e.target.value;
+    setReport(prev => ({...prev, publicAccess: val}));
+    await updateDoc(doc(db, 'reports', id), { publicAccess: val });
+  };
+  
+  const copyLink = () => {
+    navigator.clipboard.writeText(window.location.href);
+    alert("Enlace copiado al portapapeles.");
   };
 
   const saveReport = async () => {
@@ -451,6 +565,7 @@ ${section.originalComment}`;
             className="form-control"
             style={{fontWeight: 'bold', fontSize: '1.2rem', border: 'none', background: 'transparent', borderBottom: '2px solid transparent', width: '200px'}}
             placeholder="Título del Informe"
+            disabled={isViewer}
           />
           <input 
             type="date"
@@ -459,12 +574,20 @@ ${section.originalComment}`;
             className="form-control"
             style={{border: 'none', background: 'transparent', color: 'var(--text-light)', fontSize: '0.9rem'}}
             title="Fecha del Informe"
+            disabled={isViewer}
           />
         </div>
         <div className="navbar-actions">
-          <button onClick={saveReport} disabled={saving} className="btn btn-secondary">
-            <Save size={18} /> {saving ? 'Guardando...' : 'Guardar'}
-          </button>
+          {isOwner && id !== 'new' && (
+            <button onClick={() => setShowShareModal(true)} className="btn btn-secondary" style={{color: 'var(--primary-color)', borderColor: 'var(--primary-color)'}}>
+              <Share2 size={18} /> Compartir
+            </button>
+          )}
+          {!isViewer && (
+            <button onClick={saveReport} disabled={saving} className="btn btn-secondary">
+              <Save size={18} /> {saving ? 'Guardando...' : 'Guardar'}
+            </button>
+          )}
           <button onClick={generatePDF} disabled={generatingPdf} className="btn btn-primary">
             <FileDown size={18} /> {generatingPdf ? 'Generando...' : 'Crear PDF'}
           </button>
@@ -485,57 +608,62 @@ ${section.originalComment}`;
                     border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent',
                     width: '150px'
                   }}
+                  disabled={isViewer}
                 />
                 <h3 style={{color: 'var(--primary-color)', margin: 0}}>{index + 1}</h3>
               </div>
-              <button onClick={() => removeSection(section.id)} className="btn btn-danger" style={{padding: '0.4rem', borderRadius: '50%'}}>
-                <Trash2 size={16} />
-              </button>
+              {!isViewer && (
+                <button onClick={() => removeSection(section.id)} className="btn btn-danger" style={{padding: '0.4rem', borderRadius: '50%'}}>
+                  <Trash2 size={16} />
+                </button>
+              )}
             </div>
 
             {/* Zona de imágenes */}
-            <div 
-              className="image-upload-zone" 
-              style={{
-                border: '2px dashed #ccc', 
-                borderRadius: '8px', 
-                padding: '2rem', 
-                textAlign: 'center',
-                marginBottom: '1.5rem',
-                backgroundColor: 'rgba(255,255,255,0.5)',
-                cursor: 'pointer'
-              }}
-              onPaste={(e) => handleImagePaste(e, section.id)}
-            >
-              <ImageIcon size={32} color="#ccc" style={{marginBottom: '0.5rem'}} />
-              <p style={{margin: '0 0 1rem 0', color: 'var(--text-light)'}}>
-                Haz clic para subir imágenes, tomar una foto o pega (Ctrl+V) imágenes aquí
-              </p>
-              
-              <div style={{display: 'flex', gap: '1rem', justifyContent: 'center'}}>
-                {/* Botón para subir archivos */}
-                <input 
-                  type="file" 
-                  multiple 
-                  accept="image/*" 
-                  onChange={(e) => handleImageSelect(e, section.id)} 
-                  style={{display: 'none'}} 
-                  id={`file-upload-${section.id}`}
-                />
-                <label htmlFor={`file-upload-${section.id}`} className="btn btn-secondary" style={{fontSize: '0.85rem'}}>
-                  <ImageIcon size={16} /> Seleccionar Archivos
-                </label>
+            {!isViewer && (
+              <div 
+                className="image-upload-zone" 
+                style={{
+                  border: '2px dashed #ccc', 
+                  borderRadius: '8px', 
+                  padding: '2rem', 
+                  textAlign: 'center',
+                  marginBottom: '1.5rem',
+                  backgroundColor: 'rgba(255,255,255,0.5)',
+                  cursor: 'pointer'
+                }}
+                onPaste={(e) => handleImagePaste(e, section.id)}
+              >
+                <ImageIcon size={32} color="#ccc" style={{marginBottom: '0.5rem'}} />
+                <p style={{margin: '0 0 1rem 0', color: 'var(--text-light)'}}>
+                  Haz clic para subir imágenes, tomar una foto o pega (Ctrl+V) imágenes aquí
+                </p>
+                
+                <div style={{display: 'flex', gap: '1rem', justifyContent: 'center'}}>
+                  {/* Botón para subir archivos */}
+                  <input 
+                    type="file" 
+                    multiple 
+                    accept="image/*" 
+                    onChange={(e) => handleImageSelect(e, section.id)} 
+                    style={{display: 'none'}} 
+                    id={`file-upload-${section.id}`}
+                  />
+                  <label htmlFor={`file-upload-${section.id}`} className="btn btn-secondary" style={{fontSize: '0.85rem'}}>
+                    <ImageIcon size={16} /> Seleccionar Archivos
+                  </label>
 
-                {/* Botón para tomar foto (cámara interna) */}
-                <button 
-                  onClick={(e) => { e.stopPropagation(); openCamera(section.id); }}
-                  className="btn btn-primary" 
-                  style={{fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem'}}
-                >
-                  <Camera size={16} /> Tomar Foto
-                </button>
+                  {/* Botón para tomar foto (cámara interna) */}
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); openCamera(section.id); }}
+                    className="btn btn-primary" 
+                    style={{fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem'}}
+                  >
+                    <Camera size={16} /> Tomar Foto
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Preview de Imágenes */}
             {section.images.length > 0 && (
@@ -549,12 +677,14 @@ ${section.originalComment}`;
                       {imgIndex + 1}
                     </div>
                     <img src={imgUrl} alt={`Foto ${imgIndex + 1}`} style={{width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px', border: '1px solid #ddd'}} />
-                    <button 
-                      onClick={() => removeImage(section.id, imgIndex)}
-                      style={{position: 'absolute', top: 5, right: 5, background: 'red', color: 'white', border: 'none', borderRadius: '50%', width: '24px', height: '24px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center'}}
-                    >
-                      <X size={14} />
-                    </button>
+                    {!isViewer && (
+                      <button 
+                        onClick={() => removeImage(section.id, imgIndex)}
+                        style={{position: 'absolute', top: 5, right: 5, background: 'red', color: 'white', border: 'none', borderRadius: '50%', width: '24px', height: '24px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center'}}
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -564,15 +694,17 @@ ${section.originalComment}`;
             <div className="form-group" style={{position: 'relative'}}>
               <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
                 <label className="form-label" style={{margin: 0}}>Comentario sobre las imágenes:</label>
-                <button 
-                  onClick={() => toggleListening(section.id)}
-                  className={`btn ${listeningSection === section.id ? 'btn-danger' : 'btn-secondary'}`}
-                  style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', display: 'flex', gap: '0.3rem', alignItems: 'center'}}
-                  title="Dictar por voz"
-                >
-                  {listeningSection === section.id ? <MicOff size={16} /> : <Mic size={16} />}
-                  {listeningSection === section.id ? 'Detener' : 'Hablar'}
-                </button>
+                {!isViewer && (
+                  <button 
+                    onClick={() => toggleListening(section.id)}
+                    className={`btn ${listeningSection === section.id ? 'btn-danger' : 'btn-secondary'}`}
+                    style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', display: 'flex', gap: '0.3rem', alignItems: 'center'}}
+                    title="Dictar por voz"
+                  >
+                    {listeningSection === section.id ? <MicOff size={16} /> : <Mic size={16} />}
+                    {listeningSection === section.id ? 'Detener' : 'Hablar'}
+                  </button>
+                )}
               </div>
               <textarea 
                 className="form-control" 
@@ -584,27 +716,29 @@ ${section.originalComment}`;
                     updateSection(section.id, 'originalComment', e.target.value);
                   }
                 }}
-                readOnly={listeningSection === section.id}
+                readOnly={listeningSection === section.id || isViewer}
                 placeholder="Escribe o dicta lo que observas en las fotos..."
                 style={{minHeight: '100px'}}
               />
             </div>
 
             {/* Botón Mejorar Redacción */}
-            <button 
-              onClick={() => enhanceText(section.id)} 
-              className="btn" 
-              style={{background: 'var(--primary-color)', color: 'white', marginBottom: '1.5rem', width: '100%'}}
-            >
-              <Sparkles size={18} /> Mejorar Redacción con IA
-            </button>
+            {!isViewer && (
+              <button 
+                onClick={() => enhanceText(section.id)} 
+                className="btn" 
+                style={{background: 'var(--primary-color)', color: 'white', marginBottom: '1.5rem', width: '100%'}}
+              >
+                <Sparkles size={18} /> Mejorar Redacción con IA
+              </button>
+            )}
 
             {/* Comentario Formal */}
             {section.formalComment && (
               <div className="form-group" style={{marginTop: '1rem'}}>
                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
                   <label className="form-label" style={{margin: 0}}>Redacción Formal (Generada por IA):</label>
-                  {section.formalComment !== 'Redactando...' && (
+                  {!isViewer && section.formalComment !== 'Redactando...' && (
                     <button 
                       onClick={() => acceptFormalComment(section.id)} 
                       className="btn btn-secondary" 
@@ -619,15 +753,18 @@ ${section.originalComment}`;
                   value={section.formalComment}
                   onChange={(e) => updateSection(section.id, 'formalComment', e.target.value)}
                   style={{background: '#f8f9fa', borderLeft: '4px solid var(--secondary-color)'}}
+                  readOnly={isViewer}
                 />
               </div>
             )}
           </div>
         ))}
 
-        <button onClick={addSection} className="btn btn-secondary" style={{width: '100%', borderStyle: 'dashed', borderWidth: '2px'}}>
-          <Plus size={20} /> Añadir otro apartado
-        </button>
+        {!isViewer && (
+          <button onClick={addSection} className="btn btn-secondary" style={{width: '100%', borderStyle: 'dashed', borderWidth: '2px'}}>
+            <Plus size={20} /> Añadir otro apartado
+          </button>
+        )}
       </main>
 
       {/* --- ESTRUCTURA OCULTA PARA EL PDF --- */}
@@ -693,6 +830,77 @@ ${section.originalComment}`;
       </div>
 
       {/* --- VISOR DE CÁMARA (WEBRTC) --- */}
+      {showShareModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000,
+          display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem'
+        }}>
+          <div className="glass-panel" style={{width: '100%', maxWidth: '500px', backgroundColor: 'white', padding: '2rem'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem'}}>
+              <h2 style={{margin: 0, color: 'var(--primary-color)'}}><Users size={24} style={{verticalAlign: 'middle', marginRight: '0.5rem'}} /> Compartir Informe</h2>
+              <button onClick={() => setShowShareModal(false)} style={{background: 'none', border: 'none', cursor: 'pointer'}}>
+                <X size={24} color="#666" />
+              </button>
+            </div>
+            
+            <div style={{marginBottom: '2rem'}}>
+              <label className="form-label">Invitar por correo electrónico</label>
+              <div style={{display: 'flex', gap: '0.5rem'}}>
+                <input 
+                  type="email" 
+                  value={shareEmail}
+                  onChange={e => setShareEmail(e.target.value)}
+                  placeholder="ejemplo@gmail.com" 
+                  className="form-control" 
+                />
+                <select value={shareRole} onChange={e => setShareRole(e.target.value)} className="form-control" style={{width: 'auto'}}>
+                  <option value="editor">Editor</option>
+                  <option value="viewer">Lector</option>
+                </select>
+                <button onClick={handleShare} className="btn btn-primary">Invitar</button>
+              </div>
+            </div>
+
+            <div style={{marginBottom: '2rem'}}>
+              <label className="form-label">Acceso General</label>
+              <div style={{display: 'flex', gap: '1rem', alignItems: 'center'}}>
+                <div style={{flex: 1}}>
+                  <select value={report.publicAccess || 'restricted'} onChange={handlePublicAccessChange} className="form-control" disabled={!isOwner}>
+                    <option value="restricted">Restringido (Solo invitados)</option>
+                    <option value="viewer">Cualquier persona con el enlace (Lector)</option>
+                    <option value="editor">Cualquier persona con el enlace (Editor)</option>
+                  </select>
+                </div>
+                <button onClick={copyLink} className="btn btn-secondary" style={{display: 'flex', gap: '0.5rem', alignItems: 'center'}}>
+                  <LinkIcon size={16} /> Copiar Enlace
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="form-label">Personas con acceso</label>
+              <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
+                <div style={{display: 'flex', justifyContent: 'space-between', padding: '0.5rem', borderBottom: '1px solid #eee'}}>
+                  <span>{report.userId === user.uid ? user.email : report.userId} <strong>(Propietario)</strong></span>
+                  <span style={{color: 'var(--text-light)'}}>Propietario</span>
+                </div>
+                {report.collaborators?.map(email => (
+                  <div key={email} style={{display: 'flex', justifyContent: 'space-between', padding: '0.5rem', borderBottom: '1px solid #eee'}}>
+                    <span>{email}</span>
+                    <span style={{color: 'var(--text-light)'}}>{report.roles?.[email] === 'editor' ? 'Editor' : 'Lector'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{display: 'flex', justifyContent: 'flex-end', marginTop: '2rem'}}>
+              <button onClick={() => setShowShareModal(false)} className="btn btn-primary">Hecho</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isCameraOpen && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,

@@ -20,17 +20,27 @@ export default function Dashboard({ user }) {
   useEffect(() => {
     const fetchReports = async () => {
       try {
-        const q = query(
+        // Buscar informes propios
+        const q1 = query(
           collection(db, 'reports'),
           where('userId', '==', user.uid)
         );
-        const querySnapshot = await getDocs(q);
-        const reportsData = [];
-        querySnapshot.forEach((doc) => {
-          reportsData.push({ id: doc.id, ...doc.data() });
-        });
         
-        // Ordenar en el cliente (evita el error de índice compuesto de Firestore)
+        // Buscar informes compartidos con mi email
+        const q2 = query(
+          collection(db, 'reports'),
+          where('collaborators', 'array-contains', user.email)
+        );
+
+        const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+        
+        const reportsMap = new Map();
+        snap1.forEach((doc) => reportsMap.set(doc.id, { id: doc.id, ...doc.data() }));
+        snap2.forEach((doc) => reportsMap.set(doc.id, { id: doc.id, ...doc.data() }));
+        
+        const reportsData = Array.from(reportsMap.values());
+        
+        // Ordenar en el cliente
         reportsData.sort((a, b) => {
           const timeA = a.updatedAt?.toMillis ? a.updatedAt.toMillis() : 0;
           const timeB = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : 0;
@@ -236,24 +246,38 @@ ${contentToSummarize}`;
           </div>
         ) : (
           <div style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
-            {reports.map(report => (
-              <div key={report.id} className="glass-panel" style={{padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem'}}>
-                
-                <div style={{display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1}}>
-                  <h3 style={{fontSize: '1.1rem', margin: 0, color: 'var(--primary-color)'}}>{report.title || 'Informe sin título'}</h3>
-                  <div style={{display: 'flex', flexWrap: 'wrap', gap: '1.5rem', fontSize: '0.85rem', color: 'var(--text-light)'}}>
-                    <span style={{display: 'flex', alignItems: 'center', gap: '0.3rem', fontWeight: 'bold'}}>
-                      <Calendar size={14} /> Fecha del Informe: {report.reportDate ? new Date(report.reportDate).toLocaleDateString('es-ES') : 'No especificada'}
-                    </span>
-                    <span style={{display: 'flex', alignItems: 'center', gap: '0.3rem'}}><Edit size={14} /> Modificado: {formatDate(report.updatedAt)}</span>
+            {reports.map(report => {
+              let role = 'Propietario';
+              if (report.userId !== user.uid) {
+                role = report.roles && report.roles[user.email] === 'editor' ? 'Editor' : 'Lector';
+              }
+              
+              return (
+                <div key={report.id} className="glass-panel" style={{padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem'}}>
+                  <div style={{display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1}}>
+                    <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                      <h3 style={{fontSize: '1.1rem', margin: 0, color: 'var(--primary-color)'}}>{report.title || 'Informe sin título'}</h3>
+                      <span style={{
+                        background: role === 'Propietario' ? 'var(--secondary-color)' : (role === 'Editor' ? '#4CAF50' : '#FF9800'),
+                        color: 'white', padding: '0.1rem 0.5rem', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 'bold'
+                      }}>
+                        {role}
+                      </span>
+                    </div>
+                    <div style={{display: 'flex', flexWrap: 'wrap', gap: '1.5rem', fontSize: '0.85rem', color: 'var(--text-light)'}}>
+                      <span style={{display: 'flex', alignItems: 'center', gap: '0.3rem', fontWeight: 'bold'}}>
+                        <Calendar size={14} /> Fecha del Informe: {report.reportDate ? new Date(report.reportDate).toLocaleDateString('es-ES') : 'No especificada'}
+                      </span>
+                      <span style={{display: 'flex', alignItems: 'center', gap: '0.3rem'}}><Edit size={14} /> Modificado: {formatDate(report.updatedAt)}</span>
+                    </div>
                   </div>
+                  
+                  <button onClick={() => navigate(`/report/${report.id}`)} className="btn btn-secondary" style={{padding: '0.6rem 1.2rem', whiteSpace: 'nowrap'}}>
+                    {role === 'Lector' ? 'Ver Informe' : 'Abrir / Editar'}
+                  </button>
                 </div>
-                
-                <button onClick={() => navigate(`/report/${report.id}`)} className="btn btn-secondary" style={{padding: '0.6rem 1.2rem', whiteSpace: 'nowrap'}}>
-                  Abrir / Editar
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>
