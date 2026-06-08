@@ -101,7 +101,7 @@ export default function ReportEditor({ user }) {
         setReport({
           title: 'Nuevo Informe',
           reportDate: new Date().toISOString().split('T')[0],
-          sections: [{ id: Date.now().toString(), images: [], originalComment: '', formalComment: '' }]
+          sections: [{ id: Date.now().toString(), title: 'Apartado', images: [], originalComment: '', formalComment: '' }]
         });
         setLoading(false);
         return;
@@ -138,7 +138,7 @@ export default function ReportEditor({ user }) {
   const addSection = () => {
     setReport({
       ...report,
-      sections: [...report.sections, { id: Date.now().toString(), images: [], originalComment: '', formalComment: '' }]
+      sections: [...report.sections, { id: Date.now().toString(), title: 'Apartado', images: [], originalComment: '', formalComment: '' }]
     });
   };
 
@@ -377,7 +377,19 @@ export default function ReportEditor({ user }) {
         {report.sections.map((section, index) => (
           <div key={section.id} className="glass-panel" style={{padding: '2rem', marginBottom: '2rem', position: 'relative'}}>
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem'}}>
-              <h3 style={{color: 'var(--primary-color)', margin: 0}}>Apartado {index + 1}</h3>
+              <div style={{display: 'flex', alignItems: 'baseline', gap: '0.5rem'}}>
+                <input 
+                  type="text" 
+                  value={section.title !== undefined ? section.title : 'Apartado'} 
+                  onChange={(e) => updateSection(section.id, 'title', e.target.value)}
+                  style={{
+                    fontSize: '1.17em', fontWeight: 'bold', color: 'var(--primary-color)', 
+                    border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent',
+                    width: '150px'
+                  }}
+                />
+                <h3 style={{color: 'var(--primary-color)', margin: 0}}>{index + 1}</h3>
+              </div>
               <button onClick={() => removeSection(section.id)} className="btn btn-danger" style={{padding: '0.4rem', borderRadius: '50%'}}>
                 <Trash2 size={16} />
               </button>
@@ -525,7 +537,7 @@ export default function ReportEditor({ user }) {
         {report.sections.map((section, index) => (
           <div key={`pdf-${section.id}`} style={{marginBottom: '30px', pageBreakInside: 'avoid'}}>
             <h2 style={{fontSize: '18px', color: 'var(--secondary-color)', borderBottom: '1px solid #eee', paddingBottom: '5px', marginBottom: '15px'}}>
-              Apartado {index + 1}
+              {section.title || 'Apartado'} {index + 1}
             </h2>
             
             {/* Grid de Imágenes para el PDF */}

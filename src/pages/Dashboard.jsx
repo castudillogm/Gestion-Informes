@@ -103,7 +103,8 @@ export default function Dashboard({ user }) {
         if (report.sections && report.sections.length > 0) {
           report.sections.forEach((sec, idx) => {
             const comment = sec.formalComment || sec.originalComment || "Sin comentarios.";
-            contentToSummarize += `- Apartado ${idx + 1}: ${comment}\n`;
+            const sectionTitle = sec.title !== undefined ? sec.title : 'Apartado';
+            contentToSummarize += `- ${sectionTitle} ${idx + 1}: ${comment}\n`;
           });
         } else {
           contentToSummarize += "Sin contenido en el informe.\n";
