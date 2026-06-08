@@ -13,6 +13,7 @@ export default function ReportEditor({ user }) {
   const navigate = useNavigate();
   const [report, setReport] = useState({
     title: 'Nuevo Informe',
+    reportDate: new Date().toISOString().split('T')[0],
     sections: []
   });
   const [loading, setLoading] = useState(true);
@@ -99,6 +100,7 @@ export default function ReportEditor({ user }) {
       if (id === 'new') {
         setReport({
           title: 'Nuevo Informe',
+          reportDate: new Date().toISOString().split('T')[0],
           sections: [{ id: Date.now().toString(), images: [], originalComment: '', formalComment: '' }]
         });
         setLoading(false);
@@ -127,6 +129,10 @@ export default function ReportEditor({ user }) {
 
   const handleTitleChange = (e) => {
     setReport({ ...report, title: e.target.value });
+  };
+
+  const handleDateChange = (e) => {
+    setReport({ ...report, reportDate: e.target.value });
   };
 
   const addSection = () => {
@@ -263,6 +269,7 @@ export default function ReportEditor({ user }) {
     try {
       const reportData = {
         title: report.title,
+        reportDate: report.reportDate || new Date().toISOString().split('T')[0],
         userId: user.uid,
         sections: report.sections, // Ya están comprimidas
         updatedAt: serverTimestamp()
@@ -344,8 +351,16 @@ export default function ReportEditor({ user }) {
             value={report.title} 
             onChange={handleTitleChange}
             className="form-control"
-            style={{fontWeight: 'bold', fontSize: '1.2rem', border: 'none', background: 'transparent', borderBottom: '2px solid transparent'}}
+            style={{fontWeight: 'bold', fontSize: '1.2rem', border: 'none', background: 'transparent', borderBottom: '2px solid transparent', width: '200px'}}
             placeholder="Título del Informe"
+          />
+          <input 
+            type="date"
+            value={report.reportDate || ''}
+            onChange={handleDateChange}
+            className="form-control"
+            style={{border: 'none', background: 'transparent', color: 'var(--text-light)', fontSize: '0.9rem'}}
+            title="Fecha del Informe"
           />
         </div>
         <div className="navbar-actions">
@@ -502,7 +517,7 @@ export default function ReportEditor({ user }) {
           <img src="/Logo.png" alt="Logo" style={{height: '50px'}} />
           <div style={{textAlign: 'right'}}>
             <h1 style={{fontSize: '24px', color: 'var(--primary-color)', margin: '0 0 5px 0'}}>{report.title}</h1>
-            <p style={{fontSize: '12px', color: '#666', margin: 0}}>Fecha: {new Date().toLocaleDateString('es-ES')}</p>
+            <p style={{fontSize: '12px', color: '#666', margin: 0}}>Fecha del informe: {report.reportDate ? new Date(report.reportDate).toLocaleDateString('es-ES') : new Date().toLocaleDateString('es-ES')}</p>
           </div>
         </div>
 
