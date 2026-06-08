@@ -295,46 +295,60 @@ ${contentToSummarize}`;
             </button>
           </div>
         ) : (
-          <div style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
-            {reports.map(report => {
-              let role = 'Propietario';
-              if (report.userId !== user.uid) {
-                role = report.roles && report.roles[user.email] === 'editor' ? 'Editor' : 'Lector';
-              }
-              
-              return (
-                <div key={report.id} className="glass-panel" style={{padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem'}}>
-                  <div style={{display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1}}>
-                    <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                      <h3 style={{fontSize: '1.1rem', margin: 0, color: 'var(--primary-color)'}}>{report.title || 'Informe sin título'}</h3>
-                      <span style={{
-                        background: role === 'Propietario' ? 'var(--secondary-color)' : (role === 'Editor' ? '#4CAF50' : '#FF9800'),
-                        color: 'white', padding: '0.1rem 0.5rem', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 'bold'
-                      }}>
-                        {role}
-                      </span>
-                    </div>
-                    <div style={{display: 'flex', flexWrap: 'wrap', gap: '1.5rem', fontSize: '0.85rem', color: 'var(--text-light)'}}>
-                      <span style={{display: 'flex', alignItems: 'center', gap: '0.3rem', fontWeight: 'bold'}}>
-                        <Calendar size={14} /> Fecha del Informe: {report.reportDate ? new Date(report.reportDate).toLocaleDateString('es-ES') : 'No especificada'}
-                      </span>
-                      <span style={{display: 'flex', alignItems: 'center', gap: '0.3rem'}}><Edit size={14} /> Modificado: {formatDate(report.updatedAt)}</span>
-                    </div>
-                  </div>
+          <div className="glass-panel" style={{overflowX: 'auto', padding: '0'}}>
+            <table style={{width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '800px'}}>
+              <thead>
+                <tr style={{borderBottom: '2px solid #eee', color: 'var(--text-light)', fontSize: '0.9rem', backgroundColor: 'rgba(0,0,0,0.02)'}}>
+                  <th style={{padding: '1rem'}}>Nombre del Informe</th>
+                  <th style={{padding: '1rem'}}>Fecha de Informe</th>
+                  <th style={{padding: '1rem'}}>Última Modificación</th>
+                  <th style={{padding: '1rem'}}>Rol</th>
+                  <th style={{padding: '1rem', textAlign: 'right'}}>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reports.map(report => {
+                  let role = 'Propietario';
+                  if (report.userId !== user.uid) {
+                    role = report.roles && report.roles[user.email] === 'editor' ? 'Editor' : 'Lector';
+                  }
                   
-                  <div style={{display: 'flex', gap: '0.5rem', alignItems: 'center'}}>
-                    {role === 'Propietario' && (
-                      <button onClick={() => setShareReport(report)} className="btn btn-secondary" style={{padding: '0.4rem 0.6rem', fontSize: '0.85rem', color: 'var(--primary-color)', borderColor: 'var(--primary-color)'}}>
-                        <Share2 size={16} /> Compartir
-                      </button>
-                    )}
-                    <button onClick={() => navigate(`/report/${report.id}`)} className="btn btn-secondary" style={{padding: '0.4rem 0.8rem', fontSize: '0.85rem', whiteSpace: 'nowrap'}}>
-                      {role === 'Lector' ? 'Ver' : 'Editar'}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                  return (
+                    <tr key={report.id} style={{borderBottom: '1px solid #eee', transition: 'background-color 0.2s'}} onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.02)'} onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                      <td style={{padding: '0.8rem 1rem'}}>
+                        <div style={{fontWeight: 'bold', color: 'var(--primary-color)'}}>{report.title || 'Informe sin título'}</div>
+                      </td>
+                      <td style={{padding: '0.8rem 1rem', color: 'var(--text-light)', fontSize: '0.9rem'}}>
+                        {report.reportDate ? new Date(report.reportDate).toLocaleDateString('es-ES') : 'No especificada'}
+                      </td>
+                      <td style={{padding: '0.8rem 1rem', color: 'var(--text-light)', fontSize: '0.9rem'}}>
+                        {formatDate(report.updatedAt)}
+                      </td>
+                      <td style={{padding: '0.8rem 1rem'}}>
+                        <span style={{
+                          background: role === 'Propietario' ? 'var(--secondary-color)' : (role === 'Editor' ? '#4CAF50' : '#FF9800'),
+                          color: 'white', padding: '0.2rem 0.6rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', whiteSpace: 'nowrap'
+                        }}>
+                          {role}
+                        </span>
+                      </td>
+                      <td style={{padding: '0.8rem 1rem', textAlign: 'right'}}>
+                        <div style={{display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center'}}>
+                          {role === 'Propietario' && (
+                            <button onClick={() => setShareReport(report)} className="btn btn-secondary" style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', color: 'var(--primary-color)', borderColor: 'var(--primary-color)'}}>
+                              <Share2 size={14} /> Compartir
+                            </button>
+                          )}
+                          <button onClick={() => navigate(`/report/${report.id}`)} className="btn btn-secondary" style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', whiteSpace: 'nowrap'}}>
+                            {role === 'Lector' ? 'Ver' : 'Editar'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </main>
