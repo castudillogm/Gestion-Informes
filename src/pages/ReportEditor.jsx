@@ -3,9 +3,11 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { db } from '../firebase';
 import { doc, collection, addDoc, updateDoc, serverTimestamp, onSnapshot, query, where, deleteDoc } from 'firebase/firestore';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { ArrowLeft, Save, FileDown, Plus, Trash2, Image as ImageIcon, Sparkles, X, Mic, MicOff, Camera, Share2, Users, Link as LinkIcon } from 'lucide-react';
+import { ArrowLeft, Save, FileDown, Plus, Trash2, Image as ImageIcon, Sparkles, X, Mic, MicOff, Camera, Share2, Users, Link as LinkIcon, FileText } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+import * as mammoth from 'mammoth';
+import * as XLSX from 'xlsx';
 
 export default function ReportEditor({ user }) {
   const { id } = useParams();
@@ -59,9 +61,8 @@ export default function ReportEditor({ user }) {
   const [listeningSection, setListeningSection] = useState(null);
   const [interimTranscript, setInterimTranscript] = useState('');
 
-  // Estados para la cámara integrada
   const [isCameraOpen, setIsCameraOpen] = useState(false);
-  const [cameraSectionId, setCameraSectionId] = useState(null);
+  const [cameraTarget, setCameraTarget] = useState(null); // { sectionId, subId }
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
@@ -74,12 +75,12 @@ export default function ReportEditor({ user }) {
     };
   }, []);
 
-  const openCamera = async (sectionId) => {
+  const openCamera = async (sectionId, subId) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment' } // Prioriza la cámara trasera
       });
-      setCameraSectionId(sectionId);
+      setCameraTarget({ sectionId, subId });
       setIsCameraOpen(true);
       
       // Esperar a que React renderice el elemento <video>
@@ -101,11 +102,11 @@ export default function ReportEditor({ user }) {
       videoRef.current.srcObject = null;
     }
     setIsCameraOpen(false);
-    setCameraSectionId(null);
+    setCameraTarget(null);
   };
 
   const takePhoto = () => {
-    if (!videoRef.current || !canvasRef.current || !cameraSectionId) return;
+    if (!videoRef.current || !canvasRef.current || !cameraTarget) return;
     
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -120,15 +121,16 @@ export default function ReportEditor({ user }) {
     // Obtener imagen en base64 (JPEG comprimido)
     const imageDataUrl = canvas.toDataURL('image/jpeg', 0.85);
     
-    // Añadir al apartado correspondiente
-    updateSection(cameraSectionId, 'images', imageDataUrl, true);
+    // Añadir al subapartado correspondiente
+    updateSubSection(cameraTarget.sectionId, cameraTarget.subId, 'images', imageDataUrl, true);
     
     // Cerrar cámara
     closeCamera();
   };
 
-  const toggleListening = (sectionId) => {
-    if (listeningSection === sectionId) {
+  const toggleListening = (sectionId, subId) => {
+    const targetId = `${sectionId}-${subId}`;
+    if (listeningSection === targetId) {
       if (recognitionRef.current) {
         recognitionRef.current.stop();
       }
@@ -171,8 +173,14 @@ export default function ReportEditor({ user }) {
         setReport(prevReport => {
           const newSections = prevReport.sections.map(s => {
             if (s.id === sectionId) {
-              const separator = (s.originalComment && !s.originalComment.endsWith(' ')) ? ' ' : '';
-              return { ...s, originalComment: s.originalComment + separator + finalTranscript };
+              const newSubs = (s.subSections || []).map(sub => {
+                if (sub.id === subId) {
+                  const separator = (sub.originalComment && !sub.originalComment.endsWith(' ')) ? ' ' : '';
+                  return { ...sub, originalComment: sub.originalComment + separator + finalTranscript };
+                }
+                return sub;
+              });
+              return { ...s, subSections: newSubs };
             }
             return s;
           });
@@ -194,7 +202,7 @@ export default function ReportEditor({ user }) {
 
     recognition.start();
     recognitionRef.current = recognition;
-    setListeningSection(sectionId);
+    setListeningSection(targetId);
   };
 
   useEffect(() => {
@@ -221,7 +229,33 @@ export default function ReportEditor({ user }) {
         }
         
         if (!docSnap.metadata.hasPendingWrites) {
-          setReport({ id: docSnap.id, ...data });
+          const rawData = { id: docSnap.id, ...data };
+          let migrated = false;
+          
+          // MIGRACIÓN A SUBAPARTADOS
+          if (rawData.sections) {
+            rawData.sections.forEach(s => {
+              if (!s.subSections) {
+                s.subSections = [{
+                  id: s.id + '-sub0',
+                  subtitle: 'General',
+                  images: s.images || [],
+                  originalComment: s.originalComment || '',
+                  formalComment: s.formalComment || '',
+                  createdBy: s.createdBy || { name: 'Migrado' }
+                }];
+                delete s.images;
+                delete s.originalComment;
+                delete s.formalComment;
+                migrated = true;
+              }
+            });
+          }
+          
+          setReport(rawData);
+          if (migrated && (isOwner || data.publicAccess === 'editor')) {
+            triggerAutoSave(rawData);
+          }
         }
       } else {
         alert('Informe no encontrado');
@@ -265,8 +299,11 @@ export default function ReportEditor({ user }) {
   const addSection = () => {
     if (isViewer) return;
     const newSection = { 
-      id: Date.now().toString(), title: 'Apartado', images: [], originalComment: '', formalComment: '',
-      createdBy: { name: user.displayName || 'Usuario', photoURL: user.photoURL || '', email: user.email }
+      id: Date.now().toString(), title: 'Nuevo Apartado',
+      subSections: [{
+        id: Date.now().toString() + '-sub', subtitle: 'General', images: [], originalComment: '', formalComment: '',
+        createdBy: { name: user.displayName || 'Usuario', photoURL: user.photoURL || '', email: user.email }
+      }]
     };
     setReport(prev => {
       const updated = { ...prev, sections: [...prev.sections, newSection] };
@@ -326,24 +363,57 @@ export default function ReportEditor({ user }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deletedSectionInfo, isViewer]);
 
-  const handleImagePaste = (e, sectionId) => {
+  const addSubSection = (sectionId) => {
+    if (isViewer) return;
+    const newSub = {
+      id: Date.now().toString(), subtitle: 'Nuevo Subapartado', images: [], originalComment: '', formalComment: '',
+      createdBy: { name: user.displayName || 'Usuario', photoURL: user.photoURL || '', email: user.email }
+    };
+    setReport(prev => {
+      const newSections = prev.sections.map(s => {
+        if (s.id === sectionId) return { ...s, subSections: [...(s.subSections || []), newSub] };
+        return s;
+      });
+      const updated = { ...prev, sections: newSections };
+      triggerAutoSave(updated);
+      return updated;
+    });
+  };
+
+  const removeSubSection = (sectionId, subId) => {
+    if (isViewer) return;
+    if (!window.confirm('¿Seguro que deseas eliminar este subapartado?')) return;
+    setReport(prev => {
+      const newSections = prev.sections.map(s => {
+        if (s.id === sectionId) {
+          return { ...s, subSections: (s.subSections || []).filter(sub => sub.id !== subId) };
+        }
+        return s;
+      });
+      const updated = { ...prev, sections: newSections };
+      triggerAutoSave(updated);
+      return updated;
+    });
+  };
+
+  const handleImagePaste = (e, sectionId, subId) => {
     const items = e.clipboardData?.items;
     if (!items) return;
 
     for (let i = 0; i < items.length; i++) {
       if (items[i].type.indexOf('image') !== -1) {
         const blob = items[i].getAsFile();
-        uploadImage(blob, sectionId);
+        uploadImage(blob, sectionId, subId);
       }
     }
   };
 
-  const handleImageSelect = (e, sectionId) => {
+  const handleImageSelect = (e, sectionId, subId) => {
     const files = e.target.files;
     if (!files) return;
     
     Array.from(files).forEach(file => {
-      uploadImage(file, sectionId);
+      uploadImage(file, sectionId, subId);
     });
   };
 
@@ -377,42 +447,46 @@ export default function ReportEditor({ user }) {
     });
   };
 
-  const uploadImage = async (file, sectionId) => {
+  const uploadImage = async (file, sectionId, subId) => {
     let compressedDataUrl = null;
     try {
       setSaving(true);
       compressedDataUrl = await compressImage(file);
       
+      const targetId = `${sectionId}-${subId}`;
       setUploadingImages(prev => ({
         ...prev,
-        [sectionId]: [...(prev[sectionId] || []), compressedDataUrl]
+        [targetId]: [...(prev[targetId] || []), compressedDataUrl]
       }));
 
       const docRef = await addDoc(collection(db, 'reportImages'), {
         reportId: id,
         sectionId: sectionId,
+        subId: subId,
         dataUrl: compressedDataUrl,
         createdAt: serverTimestamp()
       });
       
-      updateSection(sectionId, 'images', docRef.id, true);
+      updateSubSection(sectionId, subId, 'images', docRef.id, true);
     } catch (error) {
       console.error("Error guardando la imagen:", error);
       alert("Hubo un error al guardar la imagen. Por favor, intenta de nuevo.");
     } finally {
+      const targetId = `${sectionId}-${subId}`;
       if (compressedDataUrl) {
         setUploadingImages(prev => ({
           ...prev,
-          [sectionId]: (prev[sectionId] || []).filter(url => url !== compressedDataUrl)
+          [targetId]: (prev[targetId] || []).filter(url => url !== compressedDataUrl)
         }));
       }
       setSaving(false);
     }
   };
 
-  const removeImage = async (sectionId, imageIndex) => {
+  const removeImage = async (sectionId, subId, imageIndex) => {
     const section = report.sections.find(s => s.id === sectionId);
-    const imageId = section.images[imageIndex];
+    const sub = section.subSections.find(s => s.id === subId);
+    const imageId = sub.images[imageIndex];
     
     try {
       await deleteDoc(doc(db, 'reportImages', imageId));
@@ -420,25 +494,39 @@ export default function ReportEditor({ user }) {
       console.error("Error al eliminar la imagen de Firestore:", error);
     }
 
-    const newImages = [...section.images];
+    const newImages = [...sub.images];
     newImages.splice(imageIndex, 1);
     
-    const newSections = report.sections.map(s => 
-      s.id === sectionId ? { ...s, images: newImages } : s
-    );
-    const updated = { ...report, sections: newSections };
-    setReport(updated);
-    triggerAutoSave(updated);
+    updateSubSection(sectionId, subId, 'images', newImages, false);
   };
 
-  const updateSection = (sectionId, field, value, isArray = false) => {
+  const updateSubSection = (sectionId, subId, field, value, isArray = false) => {
     if (isViewer) return;
     setReport(prev => {
       const newSections = prev.sections.map(s => {
         if (s.id === sectionId) {
-          if (isArray) {
-            return { ...s, [field]: [...s[field], value] };
-          }
+          const newSubs = (s.subSections || []).map(sub => {
+            if (sub.id === subId) {
+              if (isArray) return { ...sub, [field]: [...sub[field], value] };
+              return { ...sub, [field]: value };
+            }
+            return sub;
+          });
+          return { ...s, subSections: newSubs };
+        }
+        return s;
+      });
+      const updated = { ...prev, sections: newSections };
+      triggerAutoSave(updated);
+      return updated;
+    });
+  };
+
+  const updateSection = (sectionId, field, value) => {
+    if (isViewer) return;
+    setReport(prev => {
+      const newSections = prev.sections.map(s => {
+        if (s.id === sectionId) {
           return { ...s, [field]: value };
         }
         return s;
@@ -449,12 +537,64 @@ export default function ReportEditor({ user }) {
     });
   };
 
-  const acceptFormalComment = (sectionId) => {
+  const handleDocumentUpload = async (e, sectionId, subId) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    try {
+      let textContent = `\n[DOCUMENTO ADJUNTO: ${file.name}]\n`;
+      
+      if (file.type === 'application/pdf') {
+        const base64 = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result.split(',')[1]);
+          reader.readAsDataURL(file);
+        });
+        updateSubSection(sectionId, subId, 'tempDocument', {
+          inlineData: { data: base64, mimeType: 'application/pdf' },
+          name: file.name
+        });
+        alert(`PDF "${file.name}" cargado en memoria listo para que la IA lo lea.`);
+        return;
+      } else if (file.name.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        textContent += result.value;
+      } else if (file.name.endsWith('.xlsx') || file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+        const arrayBuffer = await file.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        textContent += XLSX.utils.sheet_to_csv(firstSheet);
+      } else {
+        alert("Formato no soportado. Sube PDF, DOCX o XLSX.");
+        return;
+      }
+      
+      // Adjuntar el texto extraído al comentario original para que la IA lo lea
+      const section = report.sections.find(s => s.id === sectionId);
+      const sub = section.subSections.find(s => s.id === subId);
+      const currentText = sub.originalComment || '';
+      updateSubSection(sectionId, subId, 'originalComment', currentText + textContent);
+      alert(`Documento "${file.name}" procesado e insertado en las notas.`);
+      
+    } catch (err) {
+      console.error(err);
+      alert("Error leyendo el documento. Asegúrate de que no esté corrupto.");
+    }
+  };
+
+  const acceptFormalComment = (sectionId, subId) => {
     if (isViewer) return;
     setReport(prevReport => {
       const newSections = prevReport.sections.map(s => {
-        if (s.id === sectionId && s.formalComment && s.formalComment !== 'Redactando...') {
-          return { ...s, originalComment: s.formalComment, formalComment: '' };
+        if (s.id === sectionId) {
+          const newSubs = s.subSections.map(sub => {
+            if (sub.id === subId && sub.formalComment && sub.formalComment !== 'Redactando...') {
+              return { ...sub, originalComment: sub.formalComment, formalComment: '', tempDocument: null };
+            }
+            return sub;
+          });
+          return { ...s, subSections: newSubs };
         }
         return s;
       });
@@ -464,9 +604,13 @@ export default function ReportEditor({ user }) {
     });
   };
 
-  const enhanceText = async (sectionId) => {
+  const enhanceText = async (sectionId, subId) => {
     const section = report.sections.find(s => s.id === sectionId);
-    if (!section.originalComment.trim()) return;
+    const sub = section.subSections.find(s => s.id === subId);
+    if (!sub.originalComment?.trim() && !sub.tempDocument) {
+      alert("No hay texto original o documento adjunto para mejorar.");
+      return;
+    }
 
     const apiKey = localStorage.getItem('geminiApiKey');
     if (!apiKey) {
@@ -475,7 +619,7 @@ export default function ReportEditor({ user }) {
     }
 
     try {
-      updateSection(sectionId, 'formalComment', 'Redactando...'); // Loading state
+      updateSubSection(sectionId, subId, 'formalComment', 'Redactando...'); // Loading state
       
       const genAI = new GoogleGenerativeAI(apiKey.trim());
       
@@ -500,21 +644,26 @@ export default function ReportEditor({ user }) {
         glossaryContext = `\n\nIMPORTANTE: El usuario ha dictado el texto original usando un micrófono, por lo que es altamente probable que haya errores tipográficos o palabras transcritas fonéticamente de forma incorrecta. Usa el siguiente GLOSARIO TÉCNICO DE LA EMPRESA para identificar esas palabras mal transcritas y corregirlas en tu redacción final:\n--- GLOSARIO ---\n${glossary}\n----------------\n`;
       }
 
-      const prompt = `Actúa como un experto redactor de informes técnicos. Mejora la redacción del siguiente comentario para que suene muy formal, claro y profesional para un informe técnico. NO inventes ningún dato nuevo, NO agregues conclusiones que no estén en el texto original. Solo mejora la gramática, corrige errores de transcripción de voz y ajusta el tono.
+      const promptText = `Actúa como un experto redactor de informes técnicos. Mejora la redacción del siguiente comentario (y analiza los documentos adjuntos si los hay) para que suene muy formal, claro y profesional para un informe técnico. Resume hallazgos clave de los documentos para complementar el texto. NO inventes ningún dato nuevo. Solo mejora la gramática, corrige errores de transcripción de voz y ajusta el tono.
 
 MUY IMPORTANTE: Devuelve ÚNICA Y EXCLUSIVAMENTE el texto mejorado. NO incluyas preámbulos, NO incluyas introducciones como "A continuación se presenta..." ni explicaciones al final. Solo quiero la redacción final.${glossaryContext}
 
 TEXTO ORIGINAL A MEJORAR:
-${section.originalComment}`;
+${sub.originalComment || '(Solo hay documento adjunto)'}`;
 
-      const result = await model.generateContent(prompt);
+      const promptParams = [promptText];
+      if (sub.tempDocument) {
+        promptParams.push(sub.tempDocument.inlineData);
+      }
+
+      const result = await model.generateContent(promptParams);
       const response = await result.response;
       const text = response.text();
 
-      updateSection(sectionId, 'formalComment', text);
+      updateSubSection(sectionId, subId, 'formalComment', text);
     } catch (error) {
       console.error("Error al generar el texto:", error);
-      updateSection(sectionId, 'formalComment', `Error al generar el texto: ${error.message || error}. Verifica tu API Key o conexión.`);
+      updateSubSection(sectionId, subId, 'formalComment', `Error al generar el texto: ${error.message || error}. Verifica tu API Key o conexión.`);
     }
   };
 
@@ -692,160 +841,197 @@ ${section.originalComment}`;
               )}
             </div>
 
-            {/* Zona de imágenes */}
-            {!isViewer && (
-              <div 
-                className="image-upload-zone" 
-                style={{
-                  border: '2px dashed #ccc', 
-                  borderRadius: '8px', 
-                  padding: '2rem', 
-                  textAlign: 'center',
-                  marginBottom: '1.5rem',
-                  backgroundColor: 'rgba(255,255,255,0.5)',
-                  cursor: 'pointer'
-                }}
-                onPaste={(e) => handleImagePaste(e, section.id)}
-              >
-                <ImageIcon size={32} color="#ccc" style={{marginBottom: '0.5rem'}} />
-                <p style={{margin: '0 0 1rem 0', color: 'var(--text-light)'}}>
-                  Haz clic para subir imágenes, tomar una foto o pega (Ctrl+V) imágenes aquí
-                </p>
-                
-                <div style={{display: 'flex', gap: '1rem', justifyContent: 'center'}}>
-                  {/* Botón para subir archivos */}
-                  <input 
-                    type="file" 
-                    multiple 
-                    accept="image/*" 
-                    onChange={(e) => handleImageSelect(e, section.id)} 
-                    style={{display: 'none'}} 
-                    id={`file-upload-${section.id}`}
-                  />
-                  <label htmlFor={`file-upload-${section.id}`} className="btn btn-secondary" style={{fontSize: '0.85rem'}}>
-                    <ImageIcon size={16} /> Seleccionar Archivos
-                  </label>
-
-                  {/* Botón para tomar foto (cámara interna) */}
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); openCamera(section.id); }}
-                    className="btn btn-primary" 
-                    style={{fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem'}}
-                  >
-                    <Camera size={16} /> Tomar Foto
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Preview de Imágenes */}
-            {(section.images.length > 0 || (uploadingImages[section.id] && uploadingImages[section.id].length > 0)) && (
-              <div style={{display: 'flex', gap: '1rem', overflowX: 'auto', paddingBottom: '1rem', marginBottom: '1.5rem'}}>
-                {section.images.map((imgId, imgIndex) => {
-                  const imgUrl = reportImages[imgId] || 'https://via.placeholder.com/150?text=Cargando...';
-                  return (
-                  <div key={imgIndex} style={{position: 'relative', minWidth: '150px', height: '150px'}}>
-                    <div style={{
-                      position: 'absolute', top: 5, left: 5, background: 'var(--primary-color)', color: 'white', 
-                      width: '24px', height: '24px', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '12px', fontWeight: 'bold'
-                    }}>
-                      {imgIndex + 1}
+            {/* Subapartados */}
+            {(section.subSections || []).map((sub, subIndex) => {
+              const targetId = `${section.id}-${sub.id}`;
+              return (
+              <div key={sub.id} style={{marginTop: '1.5rem', padding: '1rem', border: '1px solid #eee', borderRadius: '8px', backgroundColor: 'rgba(255,255,255,0.4)'}}>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1}}>
+                    <div style={{background: 'var(--secondary-color)', color: 'white', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.85rem', fontWeight: 'bold'}}>
+                      {index + 1}.{subIndex + 1}
                     </div>
-                    <img 
-                      src={imgUrl} 
-                      alt={`Foto ${imgIndex + 1}`} 
-                      style={{width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px', border: '1px solid #ddd', cursor: 'pointer'}} 
-                      onClick={() => setFullScreenImage(imgUrl)}
+                    <input 
+                      type="text" 
+                      value={sub.subtitle || 'Subapartado'} 
+                      onChange={(e) => updateSubSection(section.id, sub.id, 'subtitle', e.target.value)}
+                      style={{
+                        fontSize: '1.05em', fontWeight: '600', color: 'var(--text-color)', 
+                        border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent', flex: 1
+                      }}
+                      placeholder="Título del subapartado"
+                      disabled={isViewer}
                     />
-                    {!isViewer && (
-                      <button 
-                        onClick={() => removeImage(section.id, imgIndex)}
-                        style={{position: 'absolute', top: 5, right: 5, background: 'red', color: 'white', border: 'none', borderRadius: '50%', width: '24px', height: '24px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center'}}
-                      >
-                        <X size={14} />
-                      </button>
-                    )}
                   </div>
-                  );
-                })}
-                {/* Imágenes Subiendo */}
-                {(uploadingImages[section.id] || []).map((imgUrl, imgIndex) => (
-                  <div key={`uploading-${imgIndex}`} style={{position: 'relative', minWidth: '150px', height: '150px', opacity: 0.6}}>
-                    <img src={imgUrl} alt="Subiendo" style={{width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px', border: '1px solid #ddd'}} />
-                    <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(0,0,0,0.6)', color: 'white', padding: '5px 10px', borderRadius: '15px', fontSize: '0.8rem', fontWeight: 'bold'}}>
-                      Subiendo...
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Comentario Original */}
-            <div className="form-group" style={{position: 'relative'}}>
-              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
-                <label className="form-label" style={{margin: 0}}>Comentario sobre las imágenes:</label>
-                {!isViewer && (
-                  <button 
-                    onClick={() => toggleListening(section.id)}
-                    className={`btn ${listeningSection === section.id ? 'btn-danger' : 'btn-secondary'}`}
-                    style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', display: 'flex', gap: '0.3rem', alignItems: 'center'}}
-                    title="Dictar por voz"
-                  >
-                    {listeningSection === section.id ? <MicOff size={16} /> : <Mic size={16} />}
-                    {listeningSection === section.id ? 'Detener' : 'Hablar'}
-                  </button>
-                )}
-              </div>
-              <textarea 
-                className="form-control" 
-                value={listeningSection === section.id && interimTranscript 
-                  ? section.originalComment + (section.originalComment && !section.originalComment.endsWith(' ') ? ' ' : '') + interimTranscript 
-                  : section.originalComment}
-                onChange={(e) => {
-                  if (listeningSection !== section.id) {
-                    updateSection(section.id, 'originalComment', e.target.value);
-                  }
-                }}
-                readOnly={listeningSection === section.id || isViewer}
-                placeholder="Escribe o dicta lo que observas en las fotos..."
-                style={{minHeight: '100px'}}
-              />
-            </div>
-
-            {/* Botón Mejorar Redacción */}
-            {!isViewer && (
-              <button 
-                onClick={() => enhanceText(section.id)} 
-                className="btn" 
-                style={{background: 'var(--primary-color)', color: 'white', marginBottom: '1.5rem', width: '100%'}}
-              >
-                <Sparkles size={18} /> Mejorar Redacción con IA
-              </button>
-            )}
-
-            {/* Comentario Formal */}
-            {section.formalComment && (
-              <div className="form-group" style={{marginTop: '1rem'}}>
-                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
-                  <label className="form-label" style={{margin: 0}}>Redacción Formal (Generada por IA):</label>
-                  {!isViewer && section.formalComment !== 'Redactando...' && (
-                    <button 
-                      onClick={() => acceptFormalComment(section.id)} 
-                      className="btn btn-secondary" 
-                      style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderColor: 'var(--primary-color)', color: 'var(--primary-color)'}}
-                    >
-                      ✓ Reemplazar texto original
+                  {!isViewer && (
+                    <button onClick={() => removeSubSection(section.id, sub.id)} className="btn btn-danger" style={{padding: '0.3rem', borderRadius: '50%', background: 'transparent', color: '#ff4d4f', border: 'none'}}>
+                      <Trash2 size={16} />
                     </button>
                   )}
                 </div>
-                <textarea 
-                  className="form-control" 
-                  value={section.formalComment}
-                  onChange={(e) => updateSection(section.id, 'formalComment', e.target.value)}
-                  style={{background: '#f8f9fa', borderLeft: '4px solid var(--secondary-color)'}}
-                  readOnly={isViewer}
-                />
+
+                {/* Zona de imágenes */}
+                {!isViewer && (
+                  <div 
+                    className="image-upload-zone" 
+                    style={{
+                      border: '2px dashed #ccc', borderRadius: '8px', padding: '1.5rem', 
+                      textAlign: 'center', marginBottom: '1.5rem', backgroundColor: 'rgba(255,255,255,0.6)', cursor: 'pointer'
+                    }}
+                    onPaste={(e) => handleImagePaste(e, section.id, sub.id)}
+                  >
+                    <ImageIcon size={28} color="#ccc" style={{marginBottom: '0.5rem'}} />
+                    <p style={{margin: '0 0 1rem 0', color: 'var(--text-light)', fontSize: '0.9rem'}}>
+                      Haz clic para subir imágenes, tomar una foto o pega (Ctrl+V) imágenes aquí
+                    </p>
+                    
+                    <div style={{display: 'flex', gap: '1rem', justifyContent: 'center'}}>
+                      <input 
+                        type="file" multiple accept="image/*" 
+                        onChange={(e) => handleImageSelect(e, section.id, sub.id)} 
+                        style={{display: 'none'}} id={`file-upload-${targetId}`}
+                      />
+                      <label htmlFor={`file-upload-${targetId}`} className="btn btn-secondary" style={{fontSize: '0.85rem'}}>
+                        <ImageIcon size={16} /> Seleccionar Fotos
+                      </label>
+
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); openCamera(section.id, sub.id); }}
+                        className="btn btn-primary" style={{fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem'}}
+                      >
+                        <Camera size={16} /> Tomar Foto
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Preview de Imágenes */}
+                {(sub.images?.length > 0 || (uploadingImages[targetId] && uploadingImages[targetId].length > 0)) && (
+                  <div style={{display: 'flex', gap: '1rem', overflowX: 'auto', paddingBottom: '1rem', marginBottom: '1.5rem'}}>
+                    {(sub.images || []).map((imgId, imgIndex) => {
+                      const imgUrl = reportImages[imgId] || 'https://via.placeholder.com/150?text=Cargando...';
+                      return (
+                      <div key={imgIndex} style={{position: 'relative', minWidth: '120px', height: '120px'}}>
+                        <div style={{position: 'absolute', top: 5, left: 5, background: 'var(--primary-color)', color: 'white', width: '20px', height: '20px', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '11px', fontWeight: 'bold'}}>
+                          {imgIndex + 1}
+                        </div>
+                        <img 
+                          src={imgUrl} alt={`Foto ${imgIndex + 1}`} 
+                          style={{width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px', border: '1px solid #ddd', cursor: 'pointer'}} 
+                          onClick={() => setFullScreenImage(imgUrl)}
+                        />
+                        {!isViewer && (
+                          <button 
+                            onClick={() => removeImage(section.id, sub.id, imgIndex)}
+                            style={{position: 'absolute', top: 5, right: 5, background: 'red', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center'}}
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
+                      );
+                    })}
+                    {/* Imágenes Subiendo */}
+                    {(uploadingImages[targetId] || []).map((imgUrl, imgIndex) => (
+                      <div key={`uploading-${imgIndex}`} style={{position: 'relative', minWidth: '120px', height: '120px', opacity: 0.6}}>
+                        <img src={imgUrl} alt="Subiendo" style={{width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px', border: '1px solid #ddd'}} />
+                        <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(0,0,0,0.6)', color: 'white', padding: '5px 10px', borderRadius: '15px', fontSize: '0.7rem', fontWeight: 'bold'}}>
+                          Subiendo...
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Comentario Original */}
+                <div className="form-group" style={{position: 'relative'}}>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
+                    <label className="form-label" style={{margin: 0}}>Notas / Observaciones:</label>
+                    {!isViewer && (
+                      <div style={{display: 'flex', gap: '0.5rem'}}>
+                        <input 
+                          type="file" accept=".pdf,.doc,.docx,.xlsx" 
+                          onChange={(e) => handleDocumentUpload(e, section.id, sub.id)} 
+                          style={{display: 'none'}} id={`doc-upload-${targetId}`}
+                        />
+                        <label htmlFor={`doc-upload-${targetId}`} className="btn btn-secondary" style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', display: 'flex', gap: '0.3rem', alignItems: 'center', cursor: 'pointer'}}>
+                          <FileText size={16} /> Adjuntar Documento
+                        </label>
+                        <button 
+                          onClick={() => toggleListening(section.id, sub.id)}
+                          className={`btn ${listeningSection === targetId ? 'btn-danger' : 'btn-secondary'}`}
+                          style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', display: 'flex', gap: '0.3rem', alignItems: 'center'}}
+                          title="Dictar por voz"
+                        >
+                          {listeningSection === targetId ? <MicOff size={16} /> : <Mic size={16} />}
+                          {listeningSection === targetId ? 'Detener' : 'Dictar'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <textarea 
+                    className="form-control" 
+                    value={listeningSection === targetId && interimTranscript 
+                      ? sub.originalComment + (sub.originalComment && !sub.originalComment.endsWith(' ') ? ' ' : '') + interimTranscript 
+                      : sub.originalComment}
+                    onChange={(e) => {
+                      if (listeningSection !== targetId) {
+                        updateSubSection(section.id, sub.id, 'originalComment', e.target.value);
+                      }
+                    }}
+                    readOnly={listeningSection === targetId || isViewer}
+                    placeholder="Escribe o dicta tus notas aquí..."
+                    style={{minHeight: '80px'}}
+                  />
+                  {sub.tempDocument && (
+                    <div style={{marginTop: '0.5rem', padding: '0.5rem', background: '#e3f2fd', borderRadius: '4px', fontSize: '0.8rem', color: '#0277bd', display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                      <FileText size={14} /> Documento temporal en memoria: {sub.tempDocument.name}
+                    </div>
+                  )}
+                </div>
+
+                {/* Botón Mejorar Redacción */}
+                {!isViewer && (
+                  <button 
+                    onClick={() => enhanceText(section.id, sub.id)} 
+                    className="btn" 
+                    style={{background: 'var(--primary-color)', color: 'white', marginBottom: '1rem', width: '100%', padding: '0.6rem'}}
+                  >
+                    <Sparkles size={16} /> Generar Informe con IA
+                  </button>
+                )}
+
+                {/* Comentario Formal */}
+                {sub.formalComment && (
+                  <div className="form-group" style={{marginTop: '1rem'}}>
+                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
+                      <label className="form-label" style={{margin: 0}}>Redacción Formal (Generada por IA):</label>
+                      {!isViewer && sub.formalComment !== 'Redactando...' && (
+                        <button 
+                          onClick={() => acceptFormalComment(section.id, sub.id)} 
+                          className="btn btn-secondary" 
+                          style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderColor: 'var(--primary-color)', color: 'var(--primary-color)'}}
+                        >
+                          ✓ Reemplazar notas
+                        </button>
+                      )}
+                    </div>
+                    <textarea 
+                      className="form-control" 
+                      value={sub.formalComment}
+                      onChange={(e) => updateSubSection(section.id, sub.id, 'formalComment', e.target.value)}
+                      style={{background: '#f8f9fa', borderLeft: '4px solid var(--secondary-color)', minHeight: '80px'}}
+                      readOnly={isViewer}
+                    />
+                  </div>
+                )}
               </div>
+            )})}
+            
+            {!isViewer && (
+              <button onClick={() => addSubSection(section.id)} className="btn btn-secondary" style={{width: '100%', marginTop: '1.5rem', borderStyle: 'dashed', borderWidth: '2px', fontSize: '0.9rem', padding: '0.5rem'}}>
+                <Plus size={18} /> Añadir Subapartado
+              </button>
             )}
           </div>
         ))}
@@ -885,39 +1071,47 @@ ${section.originalComment}`;
         {/* Contenido del Informe */}
         {report.sections.map((section, index) => (
           <div key={`pdf-${section.id}`} style={{marginBottom: '30px', pageBreakInside: 'avoid'}}>
-            <h2 style={{fontSize: '18px', color: 'var(--secondary-color)', borderBottom: '1px solid #eee', paddingBottom: '5px', marginBottom: '15px'}}>
-              {section.title || 'Apartado'} {index + 1}
+            <h2 style={{fontSize: '20px', color: 'var(--primary-color)', borderBottom: '2px solid #eee', paddingBottom: '5px', marginBottom: '15px'}}>
+              {index + 1}. {section.title || 'Apartado'}
             </h2>
             
-            {/* Grid de Imágenes para el PDF */}
-            {section.images.length > 0 && (
-              <div style={{display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '15px'}}>
-                {section.images.map((imgId, imgIndex) => {
-                  const imgUrl = reportImages[imgId];
-                  if (!imgUrl) return null;
-                  return (
-                  <div key={`pdf-img-${imgIndex}`} style={{width: '48%', position: 'relative'}}>
-                    <div style={{
-                      position: 'absolute', top: 5, left: 5, background: 'rgba(0,0,0,0.7)', color: 'white', 
-                      padding: '2px 6px', borderRadius: '4px', fontSize: '10px'
-                    }}>
-                      Fig. {index + 1}.{imgIndex + 1}
-                    </div>
-                    <img src={imgUrl} style={{width: '100%', height: 'auto', borderRadius: '4px', border: '1px solid #ccc'}} />
+            {(section.subSections || []).map((sub, subIndex) => (
+              <div key={`pdf-sub-${sub.id}`} style={{marginBottom: '20px', marginLeft: '10px', pageBreakInside: 'avoid'}}>
+                <h3 style={{fontSize: '16px', color: 'var(--secondary-color)', marginBottom: '10px'}}>
+                  {index + 1}.{subIndex + 1} {sub.subtitle}
+                </h3>
+                
+                {/* Grid de Imágenes para el PDF */}
+                {sub.images && sub.images.length > 0 && (
+                  <div style={{display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '15px'}}>
+                    {sub.images.map((imgId, imgIndex) => {
+                      const imgUrl = reportImages[imgId];
+                      if (!imgUrl) return null;
+                      return (
+                      <div key={`pdf-img-${imgIndex}`} style={{width: '48%', position: 'relative'}}>
+                        <div style={{
+                          position: 'absolute', top: 5, left: 5, background: 'rgba(0,0,0,0.7)', color: 'white', 
+                          padding: '2px 6px', borderRadius: '4px', fontSize: '10px'
+                        }}>
+                          Fig. {index + 1}.{subIndex + 1}.{imgIndex + 1}
+                        </div>
+                        <img src={imgUrl} style={{width: '100%', height: 'auto', borderRadius: '4px', border: '1px solid #ccc'}} />
+                      </div>
+                    )})}
                   </div>
-                )})}
-              </div>
-            )}
+                )}
 
-            {/* Texto Formal del PDF */}
-            <div style={{fontSize: '12px', lineHeight: '1.6', textAlign: 'justify'}}>
-              <strong>Observaciones:</strong><br />
-              {section.formalComment ? (
-                <div style={{whiteSpace: 'pre-wrap', marginTop: '5px'}}>{section.formalComment}</div>
-              ) : (
-                <div style={{whiteSpace: 'pre-wrap', marginTop: '5px'}}>{section.originalComment}</div>
-              )}
-            </div>
+                {/* Texto Formal del PDF */}
+                <div style={{fontSize: '12px', lineHeight: '1.6', textAlign: 'justify'}}>
+                  <strong>Observaciones:</strong><br />
+                  {sub.formalComment ? (
+                    <div style={{whiteSpace: 'pre-wrap', marginTop: '5px'}}>{sub.formalComment}</div>
+                  ) : (
+                    <div style={{whiteSpace: 'pre-wrap', marginTop: '5px'}}>{sub.originalComment}</div>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         ))}
       </div>
