@@ -197,8 +197,9 @@ Tu tarea es generar un código HTML completo para una presentación usando Revea
 Requisitos:
 1. Crea una diapositiva de portada (título general que abarque todos los informes, muy profesional).
 2. Para cada informe, crea una o más diapositivas resaltando los puntos críticos o hallazgos principales de manera MUY visual, estructurada y resumida (no pongas grandes bloques de texto, usa viñetas cortas, máximo 4 puntos por slide).
-3. Cuando hables de un subapartado que tenga [IMÁGENES DISPONIBLES PARA ESTE SUBAPARTADO: id1, id2...], **DEBES OBLIGATORIAMENTE** insertar la etiqueta HTML: <img src="IMG_ID_REPLACE:id1" style="max-height: 400px; max-width: 100%; border-radius: 8px; margin: 10px;" /> para mostrar la evidencia en la diapositiva correspondiente.
-4. Usa este boilerplate exacto y solo cambia el contenido de <div class="slides">:
+3. MUY IMPORTANTE: Usa UN SOLO título <h2> por diapositiva. NO apiles múltiples títulos (por ejemplo, no pongas el título del informe y el título del apartado juntos si eso hace que se sobrepongan). Resume los títulos largos.
+4. Cuando hables de un subapartado que tenga [IMÁGENES DISPONIBLES PARA ESTE SUBAPARTADO: id1, id2...], **DEBES OBLIGATORIAMENTE** insertar la etiqueta HTML: <img src="IMG_ID_REPLACE:id1" style="max-height: 350px; max-width: 100%; border-radius: 8px; margin: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);" /> para mostrar la evidencia en la diapositiva correspondiente.
+5. Usa este boilerplate exacto y solo cambia el contenido de <div class="slides">:
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -209,20 +210,24 @@ Requisitos:
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/theme/white.min.css">
   <style>
-    .reveal h1, .reveal h2, .reveal h3 { color: #2c3e50; text-transform: none; }
-    .reveal section img { background: none; border: none; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-    .reveal ul { display: block; font-size: 0.8em; margin-top: 20px; line-height: 1.4; color: #333; }
+    .reveal h1, .reveal h2, .reveal h3 { color: #2c3e50; text-transform: none; margin-bottom: 20px; line-height: 1.2; word-wrap: break-word; }
+    .reveal h1 { font-size: 2.2em; }
+    .reveal h2 { font-size: 1.6em; }
+    .reveal h3 { font-size: 1.2em; }
+    .reveal section img { background: none; border: none; box-shadow: 0 4px 10px rgba(0,0,0,0.1); max-height: 350px; }
+    .reveal ul { display: block; font-size: 0.85em; margin-top: 20px; line-height: 1.5; color: #333; text-align: left; width: 80%; margin-left: auto; margin-right: auto; }
     .reveal li { margin-bottom: 15px; }
+    .reveal .slides section { padding: 20px; }
   </style>
 </head>
 <body>
   <div class="reveal">
     <div class="slides">
-      <!-- TUS DIAPOSITIVAS AQUÍ (usa <section> para cada diapositiva. Puedes usar <section> anidados si un informe tiene múltiples diapositivas) -->
+      <!-- TUS DIAPOSITIVAS AQUÍ (usa <section> para cada diapositiva. Si el contenido de un informe es largo, divídelo en varias diapositivas <section> en lugar de amontonarlo) -->
     </div>
   </div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.min.js"></script>
-  <script>Reveal.initialize({hash: true, slideNumber: true, controls: true, progress: true});</script>
+  <script>Reveal.initialize({hash: true, slideNumber: true, controls: true, progress: true, center: true, margin: 0.1, minScale: 0.2, maxScale: 1.5});</script>
 </body>
 </html>
 
