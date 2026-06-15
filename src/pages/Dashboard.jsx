@@ -141,6 +141,18 @@ export default function Dashboard({ user }) {
       console.log("Usando modelo:", modelName);
       const model = genAI.getGenerativeModel({ model: modelName });
 
+      // Obtener imágenes de Firebase para los informes seleccionados
+      const imagesMap = {};
+      const chunkSize = 10; // Firestore limit for 'in' queries is 10
+      for (let i = 0; i < selectedReports.length; i += chunkSize) {
+        const chunk = selectedReports.slice(i, i + chunkSize);
+        const qImages = query(collection(db, 'reportImages'), where('reportId', 'in', chunk));
+        const snap = await getDocs(qImages);
+        snap.forEach(doc => {
+          imagesMap[doc.id] = doc.data().dataUrl;
+        });
+      }
+
       // Gather content from selected reports
       const selectedDocs = reports.filter(r => selectedReports.includes(r.id));
       
@@ -154,31 +166,103 @@ export default function Dashboard({ user }) {
       let contentToSummarize = "";
       selectedDocs.forEach(report => {
         const reportDate = report.reportDate ? new Date(report.reportDate).toLocaleDateString('es-ES') : "Fecha desconocida";
-        contentToSummarize += `\n\n=== INFORME: ${report.title || 'Sin título'} (Fecha: ${reportDate}) ===\n`;
+        contentToSummarize += `
+
+=== INFORME: ${report.title || 'Sin título'} (Fecha: ${reportDate}) ===
+`;
         if (report.sections && report.sections.length > 0) {
           report.sections.forEach((sec, idx) => {
-            const comment = sec.formalComment || sec.originalComment || "Sin comentarios.";
             const sectionTitle = sec.title !== undefined ? sec.title : 'Apartado';
-            contentToSummarize += `- ${sectionTitle} ${idx + 1}: ${comment}\n`;
+            contentToSummarize += `
+- APARTADO ${idx + 1}: ${sectionTitle}
+`;
+            
+            (sec.subSections || []).forEach((sub, subIdx) => {
+              const comment = sub.formalComment || sub.originalComment || "Sin observaciones importantes.";
+              contentToSummarize += `  Subapartado ${idx + 1}.${subIdx + 1} (${sub.subtitle || 'Subapartado'}): ${comment}
+`;
+              if (sub.images && sub.images.length > 0) {
+                 contentToSummarize += `  [IMÁGENES DISPONIBLES PARA ESTE SUBAPARTADO: ${sub.images.join(', ')}]
+`;
+              }
+            });
           });
         } else {
-          contentToSummarize += "Sin contenido en el informe.\n";
+          contentToSummarize += "Sin contenido en el informe.
+";
         }
       });
 
-      const prompt = `Actúa como un experto redactor de informes técnicos. Te proporcionaré los contenidos de varios informes diarios de un inspector o supervisor. 
-Tu tarea es crear un único Resumen General claro, profesional y bien estructurado que agrupe los puntos más importantes de estos informes. 
-Organiza la información de forma cronológica por informe y por fecha del informe. Resalta los aspectos más críticos o las conclusiones más relevantes.
+      const prompt = `Actúa como un experto consultor corporativo. Te proporcionaré el contenido de varios informes de inspección/análisis. 
+Tu tarea es generar un código HTML completo para una presentación usando Reveal.js (una librería de presentaciones web).
+Requisitos:
+1. Crea una diapositiva de portada (título general que abarque todos los informes, muy profesional).
+2. Para cada informe, crea una o más diapositivas resaltando los puntos críticos o hallazgos principales de manera MUY visual, estructurada y resumida (no pongas grandes bloques de texto, usa viñetas cortas, máximo 4 puntos por slide).
+3. Cuando hables de un subapartado que tenga [IMÁGENES DISPONIBLES PARA ESTE SUBAPARTADO: id1, id2...], **DEBES OBLIGATORIAMENTE** insertar la etiqueta HTML: <img src="IMG_ID_REPLACE:id1" style="max-height: 400px; max-width: 100%; border-radius: 8px; margin: 10px;" /> para mostrar la evidencia en la diapositiva correspondiente.
+4. Usa este boilerplate exacto y solo cambia el contenido de <div class="slides">:
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Presentación de Gerencia</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reset.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/theme/white.min.css">
+  <style>
+    .reveal h1, .reveal h2, .reveal h3 { color: #2c3e50; text-transform: none; }
+    .reveal section img { background: none; border: none; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    .reveal ul { display: block; font-size: 0.8em; margin-top: 20px; line-height: 1.4; color: #333; }
+    .reveal li { margin-bottom: 15px; }
+  </style>
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+      <!-- TUS DIAPOSITIVAS AQUÍ (usa <section> para cada diapositiva. Puedes usar <section> anidados si un informe tiene múltiples diapositivas) -->
+    </div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.min.js"></script>
+  <script>Reveal.initialize({hash: true, slideNumber: true, controls: true, progress: true});</script>
+</body>
+</html>
 
-TEXTO DE LOS INFORMES SELECCIONADOS:
+No agregues markdown como \`\`\`html al inicio. Devuelve SOLO el código HTML puro.
+TEXTO DE LOS INFORMES A ANALIZAR:
 ${contentToSummarize}`;
 
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
+      let result;
+      let retries = 3;
+      while (retries > 0) {
+        try {
+          result = await model.generateContent(prompt);
+          break; // success
+        } catch (err) {
+          if (err.message && err.message.includes('503') && retries > 1) {
+            console.log("503 Error. Retrying in 4 seconds...");
+            await new Promise(resolve => setTimeout(resolve, 4000));
+            retries--;
+          } else {
+            throw err;
+          }
+        }
+      }
 
+      const response = await result.response;
+      let text = response.text();
       
-    } catch (error) {
+      // Limpiar posibles etiquetas markdown
+      let finalHtml = text.replace(/```html/g, '').replace(/```/g, '').trim();
+      
+      // Reemplazar marcadores por imágenes Base64 reales
+      const regex = /IMG_ID_REPLACE:([a-zA-Z0-9_-]+)/g;
+      finalHtml = finalHtml.replace(regex, (match, id) => {
+        return imagesMap[id] || 'https://via.placeholder.com/400?text=Imagen+No+Disponible';
+      });
+
+      setPresentationHtml(finalHtml);
+      
+} catch (error) {
       console.error("Error al generar resumen:", error);
       alert(`Error al generar el resumen: ${error.message || error}. Por favor, verifica tu conexión y que tu API Key sea correcta.`);
     } finally {
