@@ -214,10 +214,10 @@ Requisitos:
     .reveal h1, .reveal h2, .reveal h3 { color: #2c3e50 !important; text-transform: none !important; margin-bottom: 15px !important; line-height: 1.2 !important; word-wrap: break-word !important; position: relative !important; display: block !important; padding: 0 !important; margin-top: 0 !important; }
     .reveal h1 { font-size: 1.5em !important; font-weight: bold !important; }
     .reveal h2 { font-size: 1.1em !important; font-weight: bold !important; border-bottom: 2px solid #2c3e50; padding-bottom: 10px !important; }
-    .reveal section img { background: none; border: none; box-shadow: 0 4px 10px rgba(0,0,0,0.1); max-height: 350px; display: block; margin: 15px auto; }
+    .reveal section img { background: none; border: none; box-shadow: 0 4px 10px rgba(0,0,0,0.1); max-height: 55vh !important; max-width: 90% !important; display: block; margin: 20px auto; object-fit: contain; }
     .reveal ul { display: block; font-size: 0.85em; margin-top: 15px; line-height: 1.5; color: #333; text-align: left; width: 90%; margin-left: auto; margin-right: auto; }
     .reveal li { margin-bottom: 10px; }
-    .reveal .slides section { padding: 10px; }
+    .reveal .slides section { padding: 20px 10px 10px 10px !important; height: 100%; box-sizing: border-box; }
   </style>
 </head>
 <body>
@@ -233,7 +233,7 @@ Requisitos:
     </div>
   </div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.min.js"></script>
-  <script>Reveal.initialize({hash: true, slideNumber: true, controls: true, progress: true, center: true, minScale: 0.5, maxScale: 1.0});</script>
+  <script>Reveal.initialize({hash: true, slideNumber: true, controls: true, progress: true, center: false, minScale: 0.5, maxScale: 1.2, margin: 0.05});</script>
 </body>
 </html>
 
