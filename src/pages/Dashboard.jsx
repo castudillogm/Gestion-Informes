@@ -195,11 +195,12 @@ export default function Dashboard({ user }) {
       const prompt = `Actúa como un experto consultor corporativo. Te proporcionaré el contenido de varios informes de inspección/análisis. 
 Tu tarea es generar un código HTML completo para una presentación usando Reveal.js (una librería de presentaciones web).
 Requisitos:
-1. Crea una diapositiva de portada (título general que abarque todos los informes, muy profesional).
-2. Para cada informe, crea una o más diapositivas resaltando los puntos críticos o hallazgos principales de manera MUY visual, estructurada y resumida (no pongas grandes bloques de texto, usa viñetas cortas, máximo 4 puntos por slide).
-3. MUY IMPORTANTE: Usa UN SOLO título <h2> por diapositiva. NO apiles múltiples títulos (por ejemplo, no pongas el título del informe y el título del apartado juntos si eso hace que se sobrepongan). Resume los títulos largos.
-4. Cuando hables de un subapartado que tenga [IMÁGENES DISPONIBLES PARA ESTE SUBAPARTADO: id1, id2...], **DEBES OBLIGATORIAMENTE** insertar la etiqueta HTML: <img src="IMG_ID_REPLACE:id1" style="max-height: 350px; max-width: 100%; border-radius: 8px; margin: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);" /> para mostrar la evidencia en la diapositiva correspondiente.
-5. Usa este boilerplate exacto y solo cambia el contenido de <div class="slides">:
+1. Crea una diapositiva de portada con un SOLO título <h1> muy profesional.
+2. Para cada informe, crea una o más diapositivas. 
+3. REGLA ESTRICTA DE ESTRUCTURA: Cada diapositiva DEBE tener EXACTAMENTE UN (1) título <h2>. ESTÁ ESTRICTAMENTE PROHIBIDO poner más de un título (h1, h2, h3) en la misma diapositiva.
+4. Usa el formato de viñetas para los puntos críticos (máximo 4 puntos cortos).
+5. Cuando hables de un subapartado que tenga [IMÁGENES DISPONIBLES PARA ESTE SUBAPARTADO: id1...], DEBES OBLIGATORIAMENTE insertar la etiqueta HTML: <img src="IMG_ID_REPLACE:id1" />
+6. Usa este boilerplate exacto y solo cambia el contenido de <div class="slides">:
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -210,24 +211,29 @@ Requisitos:
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/theme/white.min.css">
   <style>
-    .reveal h1, .reveal h2, .reveal h3 { color: #2c3e50; text-transform: none; margin-bottom: 20px; line-height: 1.2; word-wrap: break-word; }
-    .reveal h1 { font-size: 2.2em; }
-    .reveal h2 { font-size: 1.6em; }
-    .reveal h3 { font-size: 1.2em; }
-    .reveal section img { background: none; border: none; box-shadow: 0 4px 10px rgba(0,0,0,0.1); max-height: 350px; }
-    .reveal ul { display: block; font-size: 0.85em; margin-top: 20px; line-height: 1.5; color: #333; text-align: left; width: 80%; margin-left: auto; margin-right: auto; }
-    .reveal li { margin-bottom: 15px; }
-    .reveal .slides section { padding: 20px; }
+    .reveal h1, .reveal h2, .reveal h3 { color: #2c3e50 !important; text-transform: none !important; margin-bottom: 15px !important; line-height: 1.2 !important; word-wrap: break-word !important; position: relative !important; display: block !important; padding: 0 !important; margin-top: 0 !important; }
+    .reveal h1 { font-size: 1.5em !important; font-weight: bold !important; }
+    .reveal h2 { font-size: 1.1em !important; font-weight: bold !important; border-bottom: 2px solid #2c3e50; padding-bottom: 10px !important; }
+    .reveal section img { background: none; border: none; box-shadow: 0 4px 10px rgba(0,0,0,0.1); max-height: 350px; display: block; margin: 15px auto; }
+    .reveal ul { display: block; font-size: 0.85em; margin-top: 15px; line-height: 1.5; color: #333; text-align: left; width: 90%; margin-left: auto; margin-right: auto; }
+    .reveal li { margin-bottom: 10px; }
+    .reveal .slides section { padding: 10px; }
   </style>
 </head>
 <body>
   <div class="reveal">
     <div class="slides">
-      <!-- TUS DIAPOSITIVAS AQUÍ (usa <section> para cada diapositiva. Si el contenido de un informe es largo, divídelo en varias diapositivas <section> en lugar de amontonarlo) -->
+      <!-- EJEMPLO DE ESTRUCTURA OBLIGATORIA PARA CADA DIAPOSITIVA:
+      <section>
+        <h2>Un Único Título Aquí</h2>
+        <ul><li>Punto 1</li></ul>
+        <img src="..." />
+      </section>
+      -->
     </div>
   </div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.min.js"></script>
-  <script>Reveal.initialize({hash: true, slideNumber: true, controls: true, progress: true, center: true, margin: 0.1, minScale: 0.2, maxScale: 1.5});</script>
+  <script>Reveal.initialize({hash: true, slideNumber: true, controls: true, progress: true, center: true, minScale: 0.5, maxScale: 1.0});</script>
 </body>
 </html>
 
