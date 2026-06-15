@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { db } from '../firebase';
 import { doc, collection, addDoc, updateDoc, serverTimestamp, onSnapshot, query, where, deleteDoc } from 'firebase/firestore';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { ArrowLeft, Save, FileDown, Plus, Trash2, Image as ImageIcon, Sparkles, X, Mic, MicOff, Camera, Share2, Users, Link as LinkIcon, FileText } from 'lucide-react';
+import { ArrowLeft, Save, FileDown, Plus, Trash2, Image as ImageIcon, Sparkles, X, Mic, MicOff, Camera, Share2, Users, Link as LinkIcon, FileText, ChevronDown, ChevronUp, Edit } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import * as mammoth from 'mammoth';
@@ -31,6 +31,12 @@ export default function ReportEditor({ user }) {
   const [uploadingImages, setUploadingImages] = useState({});
   const [reportImages, setReportImages] = useState({});
   const autoSaveTimerRef = useRef(null);
+
+  // Modal and expanded states
+  const [expandedSectionId, setExpandedSectionId] = useState(null);
+  const [activeModal, setActiveModal] = useState(null); // 'notes', 'photos'
+  const [selectedSectionId, setSelectedSectionId] = useState(null);
+  const [selectedSubId, setSelectedSubId] = useState(null);
 
   const isOwner = report.userId === user.uid;
   const role = isOwner ? 'owner' : (report.roles?.[user.email] || 'viewer');
@@ -816,234 +822,358 @@ ${sub.originalComment || '(Solo hay documento adjunto)'}`;
         </div>
       </nav>
 
-      <main className="page-container" style={{maxWidth: '800px', paddingBottom: '100px'}}>
-        {report.sections.map((section, index) => (
-          <div key={section.id} className="glass-panel" style={{padding: '2rem', marginBottom: '2rem', position: 'relative'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem'}}>
-              <div style={{display: 'flex', alignItems: 'baseline', gap: '0.5rem'}}>
+      <main className="page-container" style={{maxWidth: '1000px', paddingBottom: '100px', margin: '0 auto'}}>
+        {report.sections.map((section, index) => {
+          const isExpanded = expandedSectionId === section.id;
+          const sectionDate = section.createdAt || report.reportDate || new Date().toLocaleDateString();
+
+          return (
+          <div key={section.id} className="glass-panel" style={{marginBottom: '1rem', overflow: 'hidden'}}>
+            {/* Fila del Apartado */}
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', backgroundColor: isExpanded ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.4)', borderBottom: isExpanded ? '1px solid #ddd' : 'none'}}>
+              <div style={{display: 'flex', alignItems: 'center', gap: '1rem', flex: 1}}>
+                <div style={{width: '30px', height: '30px', borderRadius: '50%', backgroundColor: 'var(--primary-color)', color: 'white', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: 'bold'}}>
+                  {index + 1}
+                </div>
                 <input 
                   type="text" 
                   value={section.title !== undefined ? section.title : 'Apartado'} 
                   onChange={(e) => updateSection(section.id, 'title', e.target.value)}
                   style={{
-                    fontSize: '1.17em', fontWeight: 'bold', color: 'var(--primary-color)', 
-                    border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent',
-                    width: '150px'
+                    fontSize: '1.1em', fontWeight: 'bold', color: 'var(--text-color)', 
+                    border: 'none', background: 'transparent', flex: 1, minWidth: '200px'
                   }}
                   disabled={isViewer}
                 />
-                <h3 style={{color: 'var(--primary-color)', margin: 0}}>{index + 1}</h3>
+                <span style={{fontSize: '0.85em', color: 'var(--text-light)', marginRight: '1rem'}}>{sectionDate}</span>
               </div>
-              {!isViewer && (
-                <button onClick={() => removeSection(section.id)} className="btn btn-danger" style={{padding: '0.4rem', borderRadius: '50%'}}>
-                  <Trash2 size={16} />
+              
+              <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                <button onClick={() => setExpandedSectionId(isExpanded ? null : section.id)} className="btn btn-secondary" style={{padding: '0.4rem', border: 'none', background: 'transparent'}}>
+                  {isExpanded ? <ChevronUp size={20} color="var(--primary-color)" /> : <ChevronDown size={20} color="var(--primary-color)" />}
                 </button>
-              )}
-            </div>
-
-            {/* Subapartados */}
-            {(section.subSections || []).map((sub, subIndex) => {
-              const targetId = `${section.id}-${sub.id}`;
-              return (
-              <div key={sub.id} style={{marginTop: '1.5rem', padding: '1rem', border: '1px solid #eee', borderRadius: '8px', backgroundColor: 'rgba(255,255,255,0.4)'}}>
-                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
-                  <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1}}>
-                    <div style={{background: 'var(--secondary-color)', color: 'white', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.85rem', fontWeight: 'bold'}}>
-                      {index + 1}.{subIndex + 1}
-                    </div>
-                    <input 
-                      type="text" 
-                      value={sub.subtitle || 'Subapartado'} 
-                      onChange={(e) => updateSubSection(section.id, sub.id, 'subtitle', e.target.value)}
-                      style={{
-                        fontSize: '1.05em', fontWeight: '600', color: 'var(--text-color)', 
-                        border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent', flex: 1
-                      }}
-                      placeholder="Título del subapartado"
-                      disabled={isViewer}
-                    />
-                  </div>
-                  {!isViewer && (
-                    <button onClick={() => removeSubSection(section.id, sub.id)} className="btn btn-danger" style={{padding: '0.3rem', borderRadius: '50%', background: 'transparent', color: '#ff4d4f', border: 'none'}}>
-                      <Trash2 size={16} />
-                    </button>
-                  )}
-                </div>
-
-                {/* Zona de imágenes */}
                 {!isViewer && (
-                  <div 
-                    className="image-upload-zone" 
-                    style={{
-                      border: '2px dashed #ccc', borderRadius: '8px', padding: '1.5rem', 
-                      textAlign: 'center', marginBottom: '1.5rem', backgroundColor: 'rgba(255,255,255,0.6)', cursor: 'pointer'
-                    }}
-                    onPaste={(e) => handleImagePaste(e, section.id, sub.id)}
-                  >
-                    <ImageIcon size={28} color="#ccc" style={{marginBottom: '0.5rem'}} />
-                    <p style={{margin: '0 0 1rem 0', color: 'var(--text-light)', fontSize: '0.9rem'}}>
-                      Haz clic para subir imágenes, tomar una foto o pega (Ctrl+V) imágenes aquí
-                    </p>
-                    
-                    <div style={{display: 'flex', gap: '1rem', justifyContent: 'center'}}>
-                      <input 
-                        type="file" multiple accept="image/*" 
-                        onChange={(e) => handleImageSelect(e, section.id, sub.id)} 
-                        style={{display: 'none'}} id={`file-upload-${targetId}`}
-                      />
-                      <label htmlFor={`file-upload-${targetId}`} className="btn btn-secondary" style={{fontSize: '0.85rem'}}>
-                        <ImageIcon size={16} /> Seleccionar Fotos
-                      </label>
-
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); openCamera(section.id, sub.id); }}
-                        className="btn btn-primary" style={{fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem'}}
-                      >
-                        <Camera size={16} /> Tomar Foto
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Preview de Imágenes */}
-                {(sub.images?.length > 0 || (uploadingImages[targetId] && uploadingImages[targetId].length > 0)) && (
-                  <div style={{display: 'flex', gap: '1rem', overflowX: 'auto', paddingBottom: '1rem', marginBottom: '1.5rem'}}>
-                    {(sub.images || []).map((imgId, imgIndex) => {
-                      const imgUrl = reportImages[imgId] || 'https://via.placeholder.com/150?text=Cargando...';
-                      return (
-                      <div key={imgIndex} style={{position: 'relative', minWidth: '120px', height: '120px'}}>
-                        <div style={{position: 'absolute', top: 5, left: 5, background: 'var(--primary-color)', color: 'white', width: '20px', height: '20px', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '11px', fontWeight: 'bold'}}>
-                          {imgIndex + 1}
-                        </div>
-                        <img 
-                          src={imgUrl} alt={`Foto ${imgIndex + 1}`} 
-                          style={{width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px', border: '1px solid #ddd', cursor: 'pointer'}} 
-                          onClick={() => setFullScreenImage(imgUrl)}
-                        />
-                        {!isViewer && (
-                          <button 
-                            onClick={() => removeImage(section.id, sub.id, imgIndex)}
-                            style={{position: 'absolute', top: 5, right: 5, background: 'red', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center'}}
-                          >
-                            <X size={12} />
-                          </button>
-                        )}
-                      </div>
-                      );
-                    })}
-                    {/* Imágenes Subiendo */}
-                    {(uploadingImages[targetId] || []).map((imgUrl, imgIndex) => (
-                      <div key={`uploading-${imgIndex}`} style={{position: 'relative', minWidth: '120px', height: '120px', opacity: 0.6}}>
-                        <img src={imgUrl} alt="Subiendo" style={{width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px', border: '1px solid #ddd'}} />
-                        <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(0,0,0,0.6)', color: 'white', padding: '5px 10px', borderRadius: '15px', fontSize: '0.7rem', fontWeight: 'bold'}}>
-                          Subiendo...
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Comentario Original */}
-                <div className="form-group" style={{position: 'relative'}}>
-                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
-                    <label className="form-label" style={{margin: 0}}>Notas / Observaciones:</label>
-                    {!isViewer && (
-                      <div style={{display: 'flex', gap: '0.5rem'}}>
-                        <input 
-                          type="file" accept=".pdf,.doc,.docx,.xlsx" 
-                          onChange={(e) => handleDocumentUpload(e, section.id, sub.id)} 
-                          style={{display: 'none'}} id={`doc-upload-${targetId}`}
-                        />
-                        <label htmlFor={`doc-upload-${targetId}`} className="btn btn-secondary" style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', display: 'flex', gap: '0.3rem', alignItems: 'center', cursor: 'pointer'}}>
-                          <FileText size={16} /> Adjuntar Documento
-                        </label>
-                        <button 
-                          onClick={() => toggleListening(section.id, sub.id)}
-                          className={`btn ${listeningSection === targetId ? 'btn-danger' : 'btn-secondary'}`}
-                          style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', display: 'flex', gap: '0.3rem', alignItems: 'center'}}
-                          title="Dictar por voz"
-                        >
-                          {listeningSection === targetId ? <MicOff size={16} /> : <Mic size={16} />}
-                          {listeningSection === targetId ? 'Detener' : 'Dictar'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <textarea 
-                    className="form-control" 
-                    value={listeningSection === targetId && interimTranscript 
-                      ? sub.originalComment + (sub.originalComment && !sub.originalComment.endsWith(' ') ? ' ' : '') + interimTranscript 
-                      : sub.originalComment}
-                    onChange={(e) => {
-                      if (listeningSection !== targetId) {
-                        updateSubSection(section.id, sub.id, 'originalComment', e.target.value);
-                      }
-                    }}
-                    readOnly={listeningSection === targetId || isViewer}
-                    placeholder="Escribe o dicta tus notas aquí..."
-                    style={{minHeight: '80px'}}
-                  />
-                  {sub.tempDocument && (
-                    <div style={{marginTop: '0.5rem', padding: '0.5rem', background: '#e3f2fd', borderRadius: '4px', fontSize: '0.8rem', color: '#0277bd', display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                      <FileText size={14} /> Documento temporal en memoria: {sub.tempDocument.name}
-                    </div>
-                  )}
-                </div>
-
-                {/* Botón Mejorar Redacción */}
-                {!isViewer && (
-                  <button 
-                    onClick={() => enhanceText(section.id, sub.id)} 
-                    className="btn" 
-                    style={{background: 'var(--primary-color)', color: 'white', marginBottom: '1rem', width: '100%', padding: '0.6rem'}}
-                  >
-                    <Sparkles size={16} /> Generar Informe con IA
+                  <button onClick={() => removeSection(section.id)} className="btn btn-danger" style={{padding: '0.4rem', borderRadius: '50%'}}>
+                    <Trash2 size={16} />
                   </button>
                 )}
+              </div>
+            </div>
 
-                {/* Comentario Formal */}
-                {sub.formalComment && (
-                  <div className="form-group" style={{marginTop: '1rem'}}>
-                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
-                      <label className="form-label" style={{margin: 0}}>Redacción Formal (Generada por IA):</label>
-                      {!isViewer && sub.formalComment !== 'Redactando...' && (
-                        <button 
-                          onClick={() => acceptFormalComment(section.id, sub.id)} 
-                          className="btn btn-secondary" 
-                          style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderColor: 'var(--primary-color)', color: 'var(--primary-color)'}}
-                        >
-                          ✓ Reemplazar notas
+            {/* Tabla de Subapartados */}
+            {isExpanded && (
+              <div style={{padding: '0', backgroundColor: '#fdfdfd'}}>
+                {/* Cabecera de la tabla */}
+                <div style={{display: 'flex', backgroundColor: '#f1f3f5', padding: '0.8rem 1.5rem', borderBottom: '1px solid #ddd', fontSize: '0.85rem', fontWeight: 'bold', color: '#495057'}}>
+                  <div style={{flex: 3}}>Nombre del Subapartado</div>
+                  <div style={{flex: 1, textAlign: 'center'}}>Notas y Observaciones</div>
+                  <div style={{flex: 1, textAlign: 'center'}}>Fotos / Evidencias</div>
+                  <div style={{width: '40px'}}></div>
+                </div>
+
+                {/* Filas de la tabla */}
+                {(section.subSections || []).map((sub, subIndex) => {
+                  const targetId = `${section.id}-${sub.id}`;
+                  const hasNotes = !!(sub.originalComment || sub.formalComment || sub.tempDocument);
+                  const imageCount = sub.images ? sub.images.length : 0;
+
+                  return (
+                  <div key={sub.id} style={{display: 'flex', alignItems: 'center', padding: '0.8rem 1.5rem', borderBottom: '1px solid #eee', transition: 'background 0.2s'}} className="table-row-hover">
+                    {/* Columna Nombre */}
+                    <div style={{flex: 3, display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                      <span style={{fontSize: '0.8rem', color: '#888', fontWeight: 'bold'}}>{index + 1}.{subIndex + 1}</span>
+                      <input 
+                        type="text" 
+                        value={sub.subtitle || 'Subapartado'} 
+                        onChange={(e) => updateSubSection(section.id, sub.id, 'subtitle', e.target.value)}
+                        style={{
+                          fontSize: '0.95em', color: 'var(--text-color)', 
+                          border: 'none', background: 'transparent', width: '100%'
+                        }}
+                        placeholder="Escriba el nombre..."
+                        disabled={isViewer}
+                      />
+                    </div>
+
+                    {/* Columna Notas */}
+                    <div style={{flex: 1, display: 'flex', justifyContent: 'center'}}>
+                      <button 
+                        onClick={() => {
+                          setSelectedSectionId(section.id);
+                          setSelectedSubId(sub.id);
+                          setActiveModal('notes');
+                        }}
+                        style={{
+                          background: hasNotes ? 'rgba(0, 123, 255, 0.1)' : 'transparent',
+                          border: `1px solid ${hasNotes ? 'var(--primary-color)' : '#ddd'}`,
+                          borderRadius: '6px', padding: '0.4rem 1rem', cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', gap: '0.5rem',
+                          color: hasNotes ? 'var(--primary-color)' : '#666'
+                        }}
+                      >
+                        <Edit size={16} /> {hasNotes ? 'Editar Notas' : 'Añadir Notas'}
+                      </button>
+                    </div>
+
+                    {/* Columna Fotos */}
+                    <div style={{flex: 1, display: 'flex', justifyContent: 'center'}}>
+                      <button 
+                        onClick={() => {
+                          setSelectedSectionId(section.id);
+                          setSelectedSubId(sub.id);
+                          setActiveModal('photos');
+                        }}
+                        style={{
+                          background: imageCount > 0 ? 'rgba(40, 167, 69, 0.1)' : 'transparent',
+                          border: `1px solid ${imageCount > 0 ? '#28a745' : '#ddd'}`,
+                          borderRadius: '6px', padding: '0.4rem 1rem', cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', gap: '0.5rem',
+                          color: imageCount > 0 ? '#28a745' : '#666'
+                        }}
+                      >
+                        <Camera size={16} /> 
+                        {imageCount > 0 ? `${imageCount} Foto${imageCount > 1 ? 's' : ''}` : 'Añadir Fotos'}
+                      </button>
+                    </div>
+
+                    {/* Columna Borrar */}
+                    <div style={{width: '40px', display: 'flex', justifyContent: 'flex-end'}}>
+                      {!isViewer && (
+                        <button onClick={() => removeSubSection(section.id, sub.id)} className="btn btn-danger" style={{padding: '0.3rem', borderRadius: '50%', background: 'transparent', color: '#ff4d4f', border: 'none'}}>
+                          <Trash2 size={16} />
                         </button>
                       )}
                     </div>
-                    <textarea 
-                      className="form-control" 
-                      value={sub.formalComment}
-                      onChange={(e) => updateSubSection(section.id, sub.id, 'formalComment', e.target.value)}
-                      style={{background: '#f8f9fa', borderLeft: '4px solid var(--secondary-color)', minHeight: '80px'}}
-                      readOnly={isViewer}
-                    />
+                  </div>
+                )})}
+                
+                {/* Fila para añadir subapartado */}
+                {!isViewer && (
+                  <div style={{padding: '0.5rem 1.5rem', backgroundColor: '#fdfdfd'}}>
+                    <button onClick={() => addSubSection(section.id)} className="btn btn-secondary" style={{width: '100%', borderStyle: 'dashed', borderWidth: '1px', fontSize: '0.85rem', padding: '0.4rem', color: '#666'}}>
+                      <Plus size={16} /> Añadir fila
+                    </button>
                   </div>
                 )}
               </div>
-            )})}
-            
-            {!isViewer && (
-              <button onClick={() => addSubSection(section.id)} className="btn btn-secondary" style={{width: '100%', marginTop: '1.5rem', borderStyle: 'dashed', borderWidth: '2px', fontSize: '0.9rem', padding: '0.5rem'}}>
-                <Plus size={18} /> Añadir Subapartado
-              </button>
             )}
           </div>
-        ))}
+        )})}
 
         {!isViewer && (
-          <button onClick={addSection} className="btn btn-secondary" style={{width: '100%', borderStyle: 'dashed', borderWidth: '2px'}}>
-            <Plus size={20} /> Añadir otro apartado
+          <button onClick={addSection} className="btn btn-secondary" style={{width: '100%', borderStyle: 'dashed', borderWidth: '2px', padding: '1rem', marginTop: '1rem'}}>
+            <Plus size={20} /> Añadir nuevo apartado
           </button>
         )}
       </main>
 
+      
+      {/* --- MODALES (VENTANAS EMERGENTES) --- */}
+      {/* Modal de Notas */}
+      {activeModal === 'notes' && selectedSectionId && selectedSubId && (() => {
+        const targetId = `${selectedSectionId}-${selectedSubId}`;
+        const section = report.sections.find(s => s.id === selectedSectionId);
+        const sub = section?.subSections.find(s => s.id === selectedSubId);
+        if (!sub) return null;
+
+        return (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000,
+          display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem'
+        }}>
+          <div className="glass-panel" style={{width: '100%', maxWidth: '700px', backgroundColor: 'white', padding: '2rem', maxHeight: '90vh', overflowY: 'auto'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem'}}>
+              <h2 style={{margin: 0, color: 'var(--primary-color)'}}><Edit size={24} style={{verticalAlign: 'middle', marginRight: '0.5rem'}} /> Notas y Observaciones</h2>
+              <button onClick={() => setActiveModal(null)} style={{background: 'none', border: 'none', cursor: 'pointer'}}><X size={24} color="#666" /></button>
+            </div>
+            
+            <div className="form-group" style={{position: 'relative'}}>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
+                <label className="form-label" style={{margin: 0}}>Notas Originales:</label>
+                {!isViewer && (
+                  <div style={{display: 'flex', gap: '0.5rem'}}>
+                    <input 
+                      type="file" accept=".pdf,.doc,.docx,.xlsx" 
+                      onChange={(e) => handleDocumentUpload(e, selectedSectionId, selectedSubId)} 
+                      style={{display: 'none'}} id={`doc-upload-${targetId}`}
+                    />
+                    <label htmlFor={`doc-upload-${targetId}`} className="btn btn-secondary" style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', display: 'flex', gap: '0.3rem', alignItems: 'center', cursor: 'pointer'}}>
+                      <FileText size={16} /> Adjuntar Documento
+                    </label>
+                    <button 
+                      onClick={() => toggleListening(selectedSectionId, selectedSubId)}
+                      className={`btn ${listeningSection === targetId ? 'btn-danger' : 'btn-secondary'}`}
+                      style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', display: 'flex', gap: '0.3rem', alignItems: 'center'}}
+                      title="Dictar por voz"
+                    >
+                      {listeningSection === targetId ? <MicOff size={16} /> : <Mic size={16} />}
+                      {listeningSection === targetId ? 'Detener' : 'Dictar'}
+                    </button>
+                  </div>
+                )}
+              </div>
+              <textarea 
+                className="form-control" 
+                value={listeningSection === targetId && interimTranscript 
+                  ? sub.originalComment + (sub.originalComment && !sub.originalComment.endsWith(' ') ? ' ' : '') + interimTranscript 
+                  : sub.originalComment}
+                onChange={(e) => {
+                  if (listeningSection !== targetId) {
+                    updateSubSection(selectedSectionId, selectedSubId, 'originalComment', e.target.value);
+                  }
+                }}
+                readOnly={listeningSection === targetId || isViewer}
+                placeholder="Escribe o dicta tus notas aquí..."
+                style={{minHeight: '150px'}}
+              />
+              {sub.tempDocument && (
+                <div style={{marginTop: '0.5rem', padding: '0.5rem', background: '#e3f2fd', borderRadius: '4px', fontSize: '0.8rem', color: '#0277bd', display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                  <FileText size={14} /> Documento temporal en memoria: {sub.tempDocument.name}
+                </div>
+              )}
+            </div>
+
+            {!isViewer && (
+              <button 
+                onClick={() => enhanceText(selectedSectionId, selectedSubId)} 
+                className="btn" 
+                style={{background: 'var(--primary-color)', color: 'white', margin: '1rem 0', width: '100%', padding: '0.8rem', fontSize: '1rem'}}
+              >
+                <Sparkles size={18} /> Mejorar Redacción con IA
+              </button>
+            )}
+
+            <div className="form-group">
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
+                <label className="form-label" style={{margin: 0}}>Comentario Formal (Para PDF):</label>
+                {!isViewer && sub.formalComment !== 'Redactando...' && sub.formalComment && (
+                  <button 
+                    onClick={() => acceptFormalComment(selectedSectionId, selectedSubId)} 
+                    className="btn btn-secondary" 
+                    style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderColor: 'var(--primary-color)', color: 'var(--primary-color)'}}
+                  >
+                    ✓ Reemplazar notas originales
+                  </button>
+                )}
+              </div>
+              <textarea 
+                className="form-control" 
+                value={sub.formalComment}
+                onChange={(e) => updateSubSection(selectedSectionId, selectedSubId, 'formalComment', e.target.value)}
+                style={{background: '#f8f9fa', borderLeft: '4px solid var(--secondary-color)', minHeight: '150px'}}
+                readOnly={isViewer}
+                placeholder="Aquí aparecerá el texto mejorado..."
+              />
+            </div>
+
+            <div style={{display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem'}}>
+              <button onClick={() => setActiveModal(null)} className="btn btn-primary">Cerrar</button>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+
+      {/* Modal de Fotos */}
+      {activeModal === 'photos' && selectedSectionId && selectedSubId && (() => {
+        const targetId = `${selectedSectionId}-${selectedSubId}`;
+        const section = report.sections.find(s => s.id === selectedSectionId);
+        const sub = section?.subSections.find(s => s.id === selectedSubId);
+        if (!sub) return null;
+
+        return (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000,
+          display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem'
+        }}>
+          <div className="glass-panel" style={{width: '100%', maxWidth: '800px', backgroundColor: 'white', padding: '2rem', maxHeight: '90vh', overflowY: 'auto'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem'}}>
+              <h2 style={{margin: 0, color: 'var(--primary-color)'}}><ImageIcon size={24} style={{verticalAlign: 'middle', marginRight: '0.5rem'}} /> Fotos y Evidencias</h2>
+              <button onClick={() => setActiveModal(null)} style={{background: 'none', border: 'none', cursor: 'pointer'}}><X size={24} color="#666" /></button>
+            </div>
+
+            {!isViewer && (
+              <div 
+                className="image-upload-zone" 
+                style={{
+                  border: '2px dashed #ccc', borderRadius: '8px', padding: '2rem', 
+                  textAlign: 'center', marginBottom: '1.5rem', backgroundColor: '#f8f9fa', cursor: 'pointer'
+                }}
+                onPaste={(e) => handleImagePaste(e, selectedSectionId, selectedSubId)}
+              >
+                <ImageIcon size={36} color="#ccc" style={{marginBottom: '1rem'}} />
+                <p style={{margin: '0 0 1rem 0', color: 'var(--text-light)', fontSize: '1rem'}}>
+                  Haz clic para subir imágenes, tomar una foto o pega (Ctrl+V) imágenes aquí
+                </p>
+                
+                <div style={{display: 'flex', gap: '1rem', justifyContent: 'center'}}>
+                  <input 
+                    type="file" multiple accept="image/*" 
+                    onChange={(e) => handleImageSelect(e, selectedSectionId, selectedSubId)} 
+                    style={{display: 'none'}} id={`file-upload-modal-${targetId}`}
+                  />
+                  <label htmlFor={`file-upload-modal-${targetId}`} className="btn btn-secondary">
+                    <ImageIcon size={18} /> Seleccionar Fotos
+                  </label>
+
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); openCamera(selectedSectionId, selectedSubId); setActiveModal(null); }}
+                    className="btn btn-primary" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}
+                  >
+                    <Camera size={18} /> Tomar Foto
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Preview de Imágenes en el Modal */}
+            <div style={{display: 'flex', gap: '1rem', flexWrap: 'wrap', marginTop: '1.5rem'}}>
+              {(sub.images || []).map((imgId, imgIndex) => {
+                const imgUrl = reportImages[imgId] || 'https://via.placeholder.com/150?text=Cargando...';
+                return (
+                <div key={imgIndex} style={{position: 'relative', width: '150px', height: '150px'}}>
+                  <div style={{position: 'absolute', top: 5, left: 5, background: 'var(--primary-color)', color: 'white', width: '24px', height: '24px', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '12px', fontWeight: 'bold'}}>
+                    {imgIndex + 1}
+                  </div>
+                  <img 
+                    src={imgUrl} alt={`Foto ${imgIndex + 1}`} 
+                    style={{width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px', border: '1px solid #ddd', cursor: 'pointer'}} 
+                    onClick={() => setFullScreenImage(imgUrl)}
+                  />
+                  {!isViewer && (
+                    <button 
+                      onClick={() => removeImage(selectedSectionId, selectedSubId, imgIndex)}
+                      style={{position: 'absolute', top: 5, right: 5, background: 'red', color: 'white', border: 'none', borderRadius: '50%', width: '24px', height: '24px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center'}}
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+                );
+              })}
+              {/* Imágenes Subiendo */}
+              {(uploadingImages[targetId] || []).map((imgUrl, imgIndex) => (
+                <div key={`uploading-${imgIndex}`} style={{position: 'relative', width: '150px', height: '150px', opacity: 0.6}}>
+                  <img src={imgUrl} alt="Subiendo" style={{width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px', border: '1px solid #ddd'}} />
+                  <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(0,0,0,0.6)', color: 'white', padding: '5px 10px', borderRadius: '15px', fontSize: '0.8rem', fontWeight: 'bold'}}>
+                    Subiendo...
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{display: 'flex', justifyContent: 'flex-end', marginTop: '2rem'}}>
+              <button onClick={() => setActiveModal(null)} className="btn btn-primary">Cerrar</button>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+
       {/* --- ESTRUCTURA OCULTA PARA EL PDF --- */}
+
       <div 
         ref={pdfRef} 
         style={{
