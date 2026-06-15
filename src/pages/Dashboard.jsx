@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { auth, db } from '../firebase';
-import { collection, query, where, getDocs, updateDoc, doc, addDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, updateDoc, doc, addDoc, deleteDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
-import { LogOut, Settings, Plus, FileText, CheckSquare, Square, X, Download, Sparkles, Share2, Users, Link as LinkIcon } from 'lucide-react';
+import { LogOut, Settings, Plus, FileText, CheckSquare, Square, X, Download, Sparkles, Share2, Users, Link as LinkIcon, Trash2 } from 'lucide-react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { jsPDF } from 'jspdf';
 
@@ -19,6 +19,7 @@ export default function Dashboard({ user }) {
   const [shareReport, setShareReport] = useState(null);
   const [shareEmail, setShareEmail] = useState('');
   const [shareRole, setShareRole] = useState('editor');
+  const [deletedReportInfo, setDeletedReportInfo] = useState(null);
   
   const navigate = useNavigate();
 
@@ -62,6 +63,55 @@ export default function Dashboard({ user }) {
 
     fetchReports();
   }, [user]);
+
+  const handleDeleteReport = (reportId) => {
+    const reportToDelete = reports.find(r => r.id === reportId);
+    if (!reportToDelete) return;
+
+    if (deletedReportInfo?.timerId) clearTimeout(deletedReportInfo.timerId);
+
+    const timerId = setTimeout(async () => {
+      try {
+        await deleteDoc(doc(db, 'reports', reportId));
+      } catch (err) {
+        console.error("Error eliminando informe:", err);
+      }
+      setDeletedReportInfo(null);
+    }, 15000); // 15 seconds to undo
+
+    setDeletedReportInfo({ report: reportToDelete, timerId });
+    setReports(prev => prev.filter(r => r.id !== reportId));
+  };
+
+  const undoDeleteReport = () => {
+    if (!deletedReportInfo) return;
+    clearTimeout(deletedReportInfo.timerId);
+    setReports(prev => {
+      const newReports = [...prev, deletedReportInfo.report];
+      newReports.sort((a, b) => {
+        const timeA = a.updatedAt?.toMillis ? a.updatedAt.toMillis() : 0;
+        const timeB = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : 0;
+        return timeB - timeA;
+      });
+      return newReports;
+    });
+    setDeletedReportInfo(null);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        if (deletedReportInfo) {
+          if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+            e.preventDefault();
+            undoDeleteReport();
+          }
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [deletedReportInfo]);
 
   const handleLogout = () => {
     signOut(auth);
@@ -435,9 +485,14 @@ ${contentToSummarize}`;
                       <td style={{padding: '0.8rem 1rem', textAlign: 'right'}}>
                         <div style={{display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center'}}>
                           {role === 'Propietario' && (
-                            <button onClick={() => setShareReport(report)} className="btn btn-secondary" style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', color: 'var(--primary-color)', borderColor: 'var(--primary-color)'}}>
-                              <Share2 size={14} /> Compartir
-                            </button>
+                            <>
+                              <button onClick={() => setShareReport(report)} className="btn btn-secondary" style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', color: 'var(--primary-color)', borderColor: 'var(--primary-color)'}}>
+                                <Share2 size={14} /> Compartir
+                              </button>
+                              <button onClick={() => handleDeleteReport(report.id)} className="btn btn-secondary" style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', color: '#e74c3c', borderColor: '#e74c3c'}} title="Eliminar Informe">
+                                <Trash2 size={14} />
+                              </button>
+                            </>
                           )}
                           <button onClick={() => navigate(`/report/${report.id}`)} className="btn btn-secondary" style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', whiteSpace: 'nowrap'}}>
                             {role === 'Lector' ? 'Ver' : 'Editar'}
@@ -451,6 +506,23 @@ ${contentToSummarize}`;
             </table>
           </div>
         )}
+        {deletedReportInfo && (
+          <div style={{
+            position: 'fixed', bottom: '2rem', left: '50%', transform: 'translateX(-50%)',
+            backgroundColor: '#333', color: 'white', padding: '1rem 2rem', borderRadius: '30px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', gap: '1rem',
+            zIndex: 1000, animation: 'fadeInUp 0.3s ease-out'
+          }}>
+            <span>Informe "{deletedReportInfo.report.title || 'Sin título'}" eliminado.</span>
+            <button onClick={undoDeleteReport} style={{
+              background: 'transparent', border: '1px solid white', color: 'white', padding: '0.3rem 0.8rem',
+              borderRadius: '15px', cursor: 'pointer', fontSize: '0.85rem'
+            }}>
+              Deshacer (Ctrl+Z)
+            </button>
+          </div>
+        )}
+
       </main>
 
       {/* Modal Resumen General */}
