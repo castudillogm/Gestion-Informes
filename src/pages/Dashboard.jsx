@@ -13,7 +13,7 @@ export default function Dashboard({ user }) {
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [selectedReports, setSelectedReports] = useState([]);
   const [generatingSummary, setGeneratingSummary] = useState(false);
-  const [summaryText, setSummaryText] = useState('');
+  const [presentationHtml, setPresentationHtml] = useState('');
   
   // Share Modal States
   const [shareReport, setShareReport] = useState(null);
@@ -121,7 +121,7 @@ export default function Dashboard({ user }) {
     }
 
     setGeneratingSummary(true);
-    setSummaryText('');
+    setPresentationHtml('');
 
     try {
       const genAI = new GoogleGenerativeAI(apiKey.trim());
@@ -177,7 +177,7 @@ ${contentToSummarize}`;
       const response = await result.response;
       const text = response.text();
 
-      setSummaryText(text);
+      
     } catch (error) {
       console.error("Error al generar resumen:", error);
       alert(`Error al generar el resumen: ${error.message || error}. Por favor, verifica tu conexión y que tu API Key sea correcta.`);
@@ -186,43 +186,21 @@ ${contentToSummarize}`;
     }
   };
 
-  const downloadSummaryPDF = () => {
-    try {
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const margin = 20;
-      let yPosition = margin;
-      const pageWidth = pdf.internal.pageSize.width;
-      const maxWidth = pageWidth - (margin * 2);
+  
+    const openPresentation = () => {
+    const newWindow = window.open('', '_blank');
+    newWindow.document.write(presentationHtml);
+    newWindow.document.close();
+  };
 
-      pdf.setFontSize(18);
-      pdf.setTextColor(44, 62, 80);
-      pdf.text("Resumen General de Informes", margin, yPosition);
-      yPosition += 15;
-
-      pdf.setFontSize(10);
-      pdf.setTextColor(100, 100, 100);
-      pdf.text(`Fecha de generación: ${new Date().toLocaleDateString('es-ES')}`, margin, yPosition);
-      yPosition += 15;
-
-      pdf.setFontSize(12);
-      pdf.setTextColor(0, 0, 0);
-
-      const textLines = pdf.splitTextToSize(summaryText, maxWidth);
-      
-      textLines.forEach(line => {
-        if (yPosition > pdf.internal.pageSize.height - margin) {
-          pdf.addPage();
-          yPosition = margin;
-        }
-        pdf.text(line, margin, yPosition);
-        yPosition += 7;
-      });
-
-      pdf.save(`Resumen_General_${new Date().toLocaleDateString('es-ES').replace(/\//g, '-')}.pdf`);
-    } catch (error) {
-      console.error("Error generando PDF:", error);
-      alert("Hubo un error al crear el archivo PDF.");
-    }
+  const downloadPresentation = () => {
+    const blob = new Blob([presentationHtml], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Presentacion_Gerencia_${new Date().toLocaleDateString('es-ES').replace(/\//g, '-')}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleShare = async () => {
@@ -302,7 +280,7 @@ ${contentToSummarize}`;
         <div className="page-header" style={{display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between'}}>
           <h1 className="page-title">Mis Informes</h1>
           <div style={{display: 'flex', gap: '1rem'}}>
-            <button onClick={() => { setShowSummaryModal(true); setSelectedReports([]); setSummaryText(''); }} className="btn btn-secondary">
+            <button onClick={() => { setShowSummaryModal(true); setSelectedReports([]); setPresentationHtml(''); }} className="btn btn-secondary">
               <Sparkles size={20} /> Generar Resumen General
             </button>
             <button onClick={handleCreateReport} className="btn btn-primary">
@@ -400,24 +378,26 @@ ${contentToSummarize}`;
               </button>
             </div>
 
-            {summaryText ? (
-              <div style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
-                <div style={{
-                  padding: '1.5rem', backgroundColor: '#f8f9fa', 
-                  borderRadius: '8px', borderLeft: '4px solid var(--primary-color)',
-                  whiteSpace: 'pre-wrap', fontFamily: 'system-ui, sans-serif',
-                  maxHeight: '50vh', overflowY: 'auto'
-                }}>
-                  {summaryText}
+            {presentationHtml ? (
+              <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem', alignItems: 'center'}}>
+                <div style={{padding: '3rem', backgroundColor: '#f0fdf4', borderRadius: '12px', border: '2px solid #22c55e', textAlign: 'center', width: '100%'}}>
+                  <Sparkles size={48} color="#22c55e" style={{marginBottom: '1rem'}} />
+                  <h3 style={{color: '#166534', marginBottom: '0.5rem'}}>¡Presentación generada con éxito!</h3>
+                  <p style={{color: '#15803d', fontSize: '0.95rem', margin: 0}}>
+                    La IA ha analizado los informes e incrustado las fotografías correspondientes. Puedes visualizarla en tu navegador o descargarla para mostrarla sin internet.
+                  </p>
                 </div>
-                <div style={{display: 'flex', gap: '1rem', justifyContent: 'flex-end'}}>
-                  <button onClick={() => setShowSummaryModal(false)} className="btn btn-secondary">
-                    Cerrar
+                <div style={{display: 'flex', gap: '1rem', justifyContent: 'center', width: '100%'}}>
+                  <button onClick={openPresentation} className="btn btn-primary" style={{flex: 1, padding: '1rem', fontSize: '1.1rem'}}>
+                    Ver Presentación Online
                   </button>
-                  <button onClick={downloadSummaryPDF} className="btn btn-primary">
-                    <Download size={18} /> Descargar PDF
+                  <button onClick={downloadPresentation} className="btn btn-secondary" style={{flex: 1, padding: '1rem', fontSize: '1.1rem', backgroundColor: '#f8f9fa', color: '#333'}}>
+                    <Download size={20} /> Descargar Archivo HTML
                   </button>
                 </div>
+                <button onClick={() => setShowSummaryModal(false)} className="btn btn-secondary" style={{width: '100%', marginTop: '0.5rem'}}>
+                  Cerrar
+                </button>
               </div>
             ) : (
               <>
