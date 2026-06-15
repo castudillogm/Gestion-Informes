@@ -188,8 +188,7 @@ export default function Dashboard({ user }) {
             });
           });
         } else {
-          contentToSummarize += "Sin contenido en el informe.
-";
+          contentToSummarize += "Sin contenido en el informe.\n";
         }
       });
 
