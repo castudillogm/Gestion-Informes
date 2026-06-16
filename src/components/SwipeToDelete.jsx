@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Trash2 } from 'lucide-react';
 
-export default function SwipeToDelete({ children, onDelete, itemName = 'este elemento', disabled = false }) {
+export default function SwipeToDelete({ children, onDelete, itemName = 'este elemento', disabled = false, style = {} }) {
   const [offset, setOffset] = useState(0);
   const startX = useRef(0);
   const startY = useRef(0);
@@ -53,7 +53,7 @@ export default function SwipeToDelete({ children, onDelete, itemName = 'este ele
   };
 
   return (
-    <div style={{ position: 'relative', overflow: 'hidden', width: '100%', height: '100%' }}>
+    <div style={{ position: 'relative', overflow: 'hidden', width: '100%', height: '100%', ...style }}>
       <div style={{
         position: 'absolute',
         top: 0,
@@ -67,6 +67,7 @@ export default function SwipeToDelete({ children, onDelete, itemName = 'este ele
         paddingRight: '1rem',
         color: 'white',
         zIndex: 0,
+        visibility: offset < 0 ? 'visible' : 'hidden',
         opacity: offset < 0 ? 1 : 0,
         transition: 'opacity 0.2s ease-out'
       }}>

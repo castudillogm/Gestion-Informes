@@ -902,10 +902,11 @@ ${sub.originalComment || '(Solo hay documento adjunto)'}`;
             disabled={isViewer}
             itemName={`el apartado "${section.title}"`}
             onDelete={() => removeSection(section.id)}
+            style={{marginBottom: '1rem'}}
           >
           <div 
             className="glass-panel" 
-            style={{marginBottom: '1rem', overflow: 'hidden'}}
+            style={{overflow: 'hidden'}}
             onDragEnter={() => {
               if (draggedItem && !isViewer && expandedSectionId !== section.id) {
                 setExpandedSectionId(section.id);
