@@ -896,7 +896,16 @@ ${sub.originalComment || '(Solo hay documento adjunto)'}`;
           const sectionDate = section.createdAt || report.reportDate || new Date().toLocaleDateString();
 
           return (
-          <div key={section.id} className="glass-panel" style={{marginBottom: '1rem', overflow: 'hidden'}}>
+          <div 
+            key={section.id} 
+            className="glass-panel" 
+            style={{marginBottom: '1rem', overflow: 'hidden'}}
+            onDragEnter={() => {
+              if (draggedItem && !isViewer && expandedSectionId !== section.id) {
+                setExpandedSectionId(section.id);
+              }
+            }}
+          >
             {/* Fila del Apartado */}
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', backgroundColor: isExpanded ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.4)', borderBottom: isExpanded ? '1px solid #ddd' : 'none'}}>
               <div style={{display: 'flex', alignItems: 'center', gap: '1rem', flex: 1}}>
