@@ -37,6 +37,7 @@ export default function ReportEditor({ user }) {
   const [activeModal, setActiveModal] = useState(null); // 'notes', 'photos'
   const [selectedSectionId, setSelectedSectionId] = useState(null);
   const [selectedSubId, setSelectedSubId] = useState(null);
+  const [draggedItem, setDraggedItem] = useState(null);
 
   const isOwner = report.userId === user.uid;
   const role = isOwner ? 'owner' : (report.roles?.[user.email] || 'viewer');
@@ -400,6 +401,73 @@ export default function ReportEditor({ user }) {
       triggerAutoSave(updated);
       return updated;
     });
+  };
+
+  const handleDragStart = (e, sectionId, subId) => {
+    if (isViewer) return;
+    setDraggedItem({ sectionId, subId });
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', subId); // required for Firefox
+  };
+
+  const handleDragOver = (e) => {
+    if (isViewer) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e, targetSectionId, targetSubId) => {
+    if (isViewer) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!draggedItem) return;
+
+    const { sectionId: sourceSectionId, subId: sourceSubId } = draggedItem;
+
+    if (sourceSectionId === targetSectionId && sourceSubId === targetSubId) {
+      setDraggedItem(null);
+      return;
+    }
+
+    setReport(prev => {
+      let sourceSub = null;
+      prev.sections.forEach(s => {
+        if (s.id === sourceSectionId) {
+          sourceSub = (s.subSections || []).find(sub => sub.id === sourceSubId);
+        }
+      });
+
+      if (!sourceSub) return prev;
+
+      let newSections = prev.sections.map(s => {
+        if (s.id === sourceSectionId) {
+          return { ...s, subSections: (s.subSections || []).filter(sub => sub.id !== sourceSubId) };
+        }
+        return s;
+      });
+
+      const targetSectionIndex = newSections.findIndex(s => s.id === targetSectionId);
+      if (targetSectionIndex !== -1) {
+        let newSubs = [...(newSections[targetSectionIndex].subSections || [])];
+        if (targetSubId) {
+          const targetIndex = newSubs.findIndex(sub => sub.id === targetSubId);
+          if (targetIndex !== -1) {
+            newSubs.splice(targetIndex, 0, sourceSub);
+          } else {
+            newSubs.push(sourceSub);
+          }
+        } else {
+          newSubs.push(sourceSub);
+        }
+        newSections[targetSectionIndex] = { ...newSections[targetSectionIndex], subSections: newSubs };
+      }
+
+      const updated = { ...prev, sections: newSections };
+      triggerAutoSave(updated);
+      return updated;
+    });
+
+    setDraggedItem(null);
   };
 
   const handleImagePaste = (e, sectionId, subId) => {
@@ -878,7 +946,20 @@ ${sub.originalComment || '(Solo hay documento adjunto)'}`;
                   const imageCount = sub.images ? sub.images.length : 0;
 
                   return (
-                  <div key={sub.id} style={{display: 'flex', alignItems: 'center', padding: '0.8rem 1.5rem', borderBottom: '1px solid #eee', transition: 'background 0.2s'}} className="table-row-hover">
+                  <div 
+                    key={sub.id} 
+                    draggable={!isViewer}
+                    onDragStart={(e) => handleDragStart(e, section.id, sub.id)}
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, section.id, sub.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', padding: '0.8rem 1.5rem', 
+                      borderBottom: '1px solid #eee', transition: 'background 0.2s',
+                      cursor: isViewer ? 'default' : 'grab',
+                      opacity: draggedItem?.subId === sub.id ? 0.5 : 1
+                    }} 
+                    className="table-row-hover"
+                  >
                     {/* Columna Nombre */}
                     <div style={{flex: 3, display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
                       <span style={{fontSize: '0.8rem', color: '#888', fontWeight: 'bold'}}>{index + 1}.{subIndex + 1}</span>
@@ -949,7 +1030,11 @@ ${sub.originalComment || '(Solo hay documento adjunto)'}`;
                 
                 {/* Fila para añadir subapartado */}
                 {!isViewer && (
-                  <div style={{padding: '0.5rem 1.5rem', backgroundColor: '#fdfdfd'}}>
+                  <div 
+                    style={{padding: '0.5rem 1.5rem', backgroundColor: '#fdfdfd'}}
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, section.id, null)}
+                  >
                     <button onClick={() => addSubSection(section.id)} className="btn btn-secondary" style={{width: '100%', borderStyle: 'dashed', borderWidth: '1px', fontSize: '0.85rem', padding: '0.4rem', color: '#666'}}>
                       <Plus size={16} /> Añadir fila
                     </button>
