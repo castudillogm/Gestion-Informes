@@ -66,7 +66,9 @@ export default function SwipeToDelete({ children, onDelete, itemName = 'este ele
         justifyContent: 'flex-end',
         paddingRight: '1rem',
         color: 'white',
-        zIndex: 0
+        zIndex: 0,
+        opacity: offset < 0 ? 1 : 0,
+        transition: 'opacity 0.2s ease-out'
       }}>
         <Trash2 size={24} />
       </div>
