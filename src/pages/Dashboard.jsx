@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { auth, db } from '../firebase';
-import { collection, query, where, getDocs, updateDoc, doc, addDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, updateDoc, doc, addDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { LogOut, Settings, Plus, FileText, CheckSquare, Square, X, Download, Sparkles, Share2, Users, Link as LinkIcon, Trash2 } from 'lucide-react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -165,7 +165,14 @@ export default function Dashboard({ user }) {
       return;
     }
 
-    const apiKey = localStorage.getItem('geminiApiKey');
+    let apiKey = localStorage.getItem('geminiApiKey');
+    try {
+      const configSnap = await getDoc(doc(db, 'globalSettings', 'config'));
+      if (configSnap.exists() && configSnap.data().geminiApiKey) {
+        apiKey = configSnap.data().geminiApiKey;
+      }
+    } catch(e) { console.error("No se pudo cargar la config global", e); }
+
     if (!apiKey) {
       alert("No se ha configurado la API Key de Gemini. Ve a Configuración.");
       return;

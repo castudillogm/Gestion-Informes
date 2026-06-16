@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { db } from '../firebase';
-import { doc, collection, addDoc, updateDoc, serverTimestamp, onSnapshot, query, where, deleteDoc } from 'firebase/firestore';
+import { doc, collection, addDoc, updateDoc, serverTimestamp, onSnapshot, query, where, deleteDoc, getDoc } from 'firebase/firestore';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { ArrowLeft, Save, FileDown, Plus, Trash2, Image as ImageIcon, Sparkles, X, Mic, MicOff, Camera, Share2, Users, Link as LinkIcon, FileText, ChevronDown, ChevronUp, Edit } from 'lucide-react';
 import { jsPDF } from 'jspdf';
@@ -691,7 +691,17 @@ export default function ReportEditor({ user }) {
       return;
     }
 
-    const apiKey = localStorage.getItem('geminiApiKey');
+    let apiKey = localStorage.getItem('geminiApiKey');
+    let glossary = localStorage.getItem('companyGlossary');
+
+    try {
+      const configSnap = await getDoc(doc(db, 'globalSettings', 'config'));
+      if (configSnap.exists()) {
+        if (configSnap.data().geminiApiKey) apiKey = configSnap.data().geminiApiKey;
+        if (configSnap.data().companyGlossary) glossary = configSnap.data().companyGlossary;
+      }
+    } catch(e) { console.error("No se pudo cargar la config global", e); }
+
     if (!apiKey) {
       alert("No se ha configurado la API Key de Gemini. Ve a Configuración.");
       return;
@@ -717,7 +727,6 @@ export default function ReportEditor({ user }) {
       console.log("Usando modelo:", modelName);
       const model = genAI.getGenerativeModel({ model: modelName });
 
-      const glossary = localStorage.getItem('companyGlossary');
       let glossaryContext = '';
       if (glossary && glossary.trim() !== '') {
         glossaryContext = `\n\nIMPORTANTE: El usuario ha dictado el texto original usando un micrófono, por lo que es altamente probable que haya errores tipográficos o palabras transcritas fonéticamente de forma incorrecta. Usa el siguiente GLOSARIO TÉCNICO DE LA EMPRESA para identificar esas palabras mal transcritas y corregirlas en tu redacción final:\n--- GLOSARIO ---\n${glossary}\n----------------\n`;

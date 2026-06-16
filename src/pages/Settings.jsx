@@ -1,18 +1,49 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Key, Save, Book } from 'lucide-react';
+import { db } from '../firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 export default function Settings() {
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('geminiApiKey') || '');
-  const [glossary, setGlossary] = useState(() => localStorage.getItem('companyGlossary') || '');
+  const [apiKey, setApiKey] = useState('');
+  const [glossary, setGlossary] = useState('');
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const handleSave = (e) => {
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const configSnap = await getDoc(doc(db, 'globalSettings', 'config'));
+        if (configSnap.exists()) {
+          setApiKey(configSnap.data().geminiApiKey || '');
+          setGlossary(configSnap.data().companyGlossary || '');
+        } else {
+          setApiKey(localStorage.getItem('geminiApiKey') || '');
+          setGlossary(localStorage.getItem('companyGlossary') || '');
+        }
+      } catch (e) {
+        console.error(e);
+      }
+      setLoading(false);
+    };
+    fetchConfig();
+  }, []);
+
+  const handleSave = async (e) => {
     e.preventDefault();
-    localStorage.setItem('geminiApiKey', apiKey);
-    localStorage.setItem('companyGlossary', glossary);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    try {
+      await setDoc(doc(db, 'globalSettings', 'config'), {
+        geminiApiKey: apiKey,
+        companyGlossary: glossary
+      });
+      localStorage.setItem('geminiApiKey', apiKey);
+      localStorage.setItem('companyGlossary', glossary);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (error) {
+      console.error("Error guardando config:", error);
+      alert("Error al guardar la configuración global.");
+    }
   };
 
   return (
