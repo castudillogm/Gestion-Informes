@@ -8,6 +8,7 @@ import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import * as mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
+import SwipeToDelete from '../components/SwipeToDelete';
 
 export default function ReportEditor({ user }) {
   const { id } = useParams();
@@ -896,8 +897,13 @@ ${sub.originalComment || '(Solo hay documento adjunto)'}`;
           const sectionDate = section.createdAt || report.reportDate || new Date().toLocaleDateString();
 
           return (
+          <SwipeToDelete
+            key={section.id}
+            disabled={isViewer}
+            itemName={`el apartado "${section.title}"`}
+            onDelete={() => removeSection(section.id)}
+          >
           <div 
-            key={section.id} 
             className="glass-panel" 
             style={{marginBottom: '1rem', overflow: 'hidden'}}
             onDragEnter={() => {
@@ -955,8 +961,13 @@ ${sub.originalComment || '(Solo hay documento adjunto)'}`;
                   const imageCount = sub.images ? sub.images.length : 0;
 
                   return (
+                  <SwipeToDelete
+                    key={sub.id}
+                    disabled={isViewer}
+                    itemName="este subapartado"
+                    onDelete={() => removeSubSection(section.id, sub.id)}
+                  >
                   <div 
-                    key={sub.id} 
                     draggable={!isViewer}
                     onDragStart={(e) => handleDragStart(e, section.id, sub.id)}
                     onDragOver={handleDragOver}
@@ -1035,6 +1046,7 @@ ${sub.originalComment || '(Solo hay documento adjunto)'}`;
                       )}
                     </div>
                   </div>
+                  </SwipeToDelete>
                 )})}
                 
                 {/* Fila para añadir subapartado */}
@@ -1052,6 +1064,7 @@ ${sub.originalComment || '(Solo hay documento adjunto)'}`;
               </div>
             )}
           </div>
+          </SwipeToDelete>
         )})}
 
         {!isViewer && (

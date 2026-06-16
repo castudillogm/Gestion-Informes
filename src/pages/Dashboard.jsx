@@ -6,6 +6,7 @@ import { signOut } from 'firebase/auth';
 import { LogOut, Settings, Plus, FileText, CheckSquare, Square, X, Download, Sparkles, Share2, Users, Link as LinkIcon, Trash2 } from 'lucide-react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { jsPDF } from 'jspdf';
+import SwipeToDelete from '../components/SwipeToDelete';
 
 export default function Dashboard({ user }) {
   const [reports, setReports] = useState([]);
@@ -445,18 +446,15 @@ ${contentToSummarize}`;
             </button>
           </div>
         ) : (
-          <div className="glass-panel" style={{overflowX: 'auto', padding: '0'}}>
-            <table style={{width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '800px'}}>
-              <thead>
-                <tr style={{borderBottom: '2px solid #eee', color: 'var(--text-light)', fontSize: '0.9rem', backgroundColor: 'rgba(0,0,0,0.02)'}}>
-                  <th style={{padding: '1rem'}}>Nombre del Informe</th>
-                  <th style={{padding: '1rem'}}>Fecha de Informe</th>
-                  <th style={{padding: '1rem'}}>Última Modificación</th>
-                  <th style={{padding: '1rem'}}>Rol</th>
-                  <th style={{padding: '1rem', textAlign: 'right'}}>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
+          <div className="glass-panel" style={{overflowX: 'hidden', padding: '0'}}>
+            <div style={{display: 'flex', flexDirection: 'column', width: '100%', minWidth: '300px'}}>
+              <div style={{display: 'flex', borderBottom: '2px solid #eee', color: 'var(--text-light)', fontSize: '0.9rem', backgroundColor: 'rgba(0,0,0,0.02)', padding: '1rem'}}>
+                <div style={{flex: 2}}>Nombre del Informe</div>
+                <div style={{flex: 1, display: 'none', '@media (min-width: 768px)': {display: 'block'}}}>Fecha</div>
+                <div style={{flex: 1}}>Rol</div>
+                <div style={{flex: 1, textAlign: 'right'}}>Acciones</div>
+              </div>
+              <div style={{display: 'flex', flexDirection: 'column'}}>
                 {reports.map(report => {
                   let role = 'Propietario';
                   if (report.userId !== user.uid) {
@@ -464,33 +462,36 @@ ${contentToSummarize}`;
                   }
                   
                   return (
-                    <tr key={report.id} style={{borderBottom: '1px solid #eee', transition: 'background-color 0.2s'}} onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.02)'} onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                      <td style={{padding: '0.8rem 1rem'}}>
+                    <SwipeToDelete
+                      key={report.id}
+                      disabled={role !== 'Propietario'}
+                      itemName="este informe"
+                      onDelete={() => handleDeleteReport(report.id)}
+                    >
+                    <div style={{display: 'flex', alignItems: 'center', borderBottom: '1px solid #eee', transition: 'background-color 0.2s', width: '100%', padding: '0.8rem 1rem'}} onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.02)'} onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                      <div style={{flex: 2, paddingRight: '1rem'}}>
                         <div style={{fontWeight: 'bold', color: 'var(--primary-color)'}}>{report.title || 'Informe sin título'}</div>
-                      </td>
-                      <td style={{padding: '0.8rem 1rem', color: 'var(--text-light)', fontSize: '0.9rem'}}>
+                        <div style={{fontSize: '0.8rem', color: 'var(--text-light)'}}>
+                           {formatDate(report.updatedAt)}
+                        </div>
+                      </div>
+                      <div style={{flex: 1, display: 'none', '@media (min-width: 768px)': {display: 'block'}, color: 'var(--text-light)', fontSize: '0.9rem'}}>
                         {report.reportDate ? new Date(report.reportDate).toLocaleDateString('es-ES') : 'No especificada'}
-                      </td>
-                      <td style={{padding: '0.8rem 1rem', color: 'var(--text-light)', fontSize: '0.9rem'}}>
-                        {formatDate(report.updatedAt)}
-                      </td>
-                      <td style={{padding: '0.8rem 1rem'}}>
+                      </div>
+                      <div style={{flex: 1}}>
                         <span style={{
                           background: role === 'Propietario' ? 'var(--secondary-color)' : (role === 'Editor' ? '#4CAF50' : '#FF9800'),
                           color: 'white', padding: '0.2rem 0.6rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', whiteSpace: 'nowrap'
                         }}>
                           {role}
                         </span>
-                      </td>
-                      <td style={{padding: '0.8rem 1rem', textAlign: 'right'}}>
+                      </div>
+                      <div style={{flex: 1, textAlign: 'right'}}>
                         <div style={{display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center'}}>
                           {role === 'Propietario' && (
                             <>
                               <button onClick={() => setShareReport(report)} className="btn btn-secondary" style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', color: 'var(--primary-color)', borderColor: 'var(--primary-color)'}}>
                                 <Share2 size={14} /> Compartir
-                              </button>
-                              <button onClick={() => handleDeleteReport(report.id)} className="btn btn-secondary" style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', color: '#e74c3c', borderColor: '#e74c3c'}} title="Eliminar Informe">
-                                <Trash2 size={14} />
                               </button>
                             </>
                           )}
@@ -498,12 +499,13 @@ ${contentToSummarize}`;
                             {role === 'Lector' ? 'Ver' : 'Editar'}
                           </button>
                         </div>
-                      </td>
-                    </tr>
+                      </div>
+                    </div>
+                    </SwipeToDelete>
                   );
                 })}
-              </tbody>
-            </table>
+              </div>
+            </div>
           </div>
         )}
         {deletedReportInfo && (
