@@ -617,9 +617,11 @@ export default function ReportEditor({ user }) {
     if (!file) return;
     
     try {
-      let textContent = `\n[DOCUMENTO ADJUNTO: ${file.name}]\n`;
+      let isPdf = false;
+      let extractedText = null;
       
       if (file.type === 'application/pdf') {
+        isPdf = true;
         const base64 = await new Promise((resolve) => {
           const reader = new FileReader();
           reader.onload = (e) => resolve(e.target.result.split(',')[1]);
@@ -634,23 +636,25 @@ export default function ReportEditor({ user }) {
       } else if (file.name.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
         const arrayBuffer = await file.arrayBuffer();
         const result = await mammoth.extractRawText({ arrayBuffer });
-        textContent += result.value;
+        extractedText = result.value;
       } else if (file.name.endsWith('.xlsx') || file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
         const arrayBuffer = await file.arrayBuffer();
         const workbook = XLSX.read(arrayBuffer, { type: 'array' });
         const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        textContent += XLSX.utils.sheet_to_csv(firstSheet);
+        extractedText = XLSX.utils.sheet_to_csv(firstSheet);
       } else {
         alert("Formato no soportado. Sube PDF, DOCX o XLSX.");
         return;
       }
       
-      // Adjuntar el texto extraído al comentario original para que la IA lo lea
-      const section = report.sections.find(s => s.id === sectionId);
-      const sub = section.subSections.find(s => s.id === subId);
-      const currentText = sub.originalComment || '';
-      updateSubSection(sectionId, subId, 'originalComment', currentText + textContent);
-      alert(`Documento "${file.name}" procesado e insertado en las notas.`);
+      if (!isPdf && extractedText !== null) {
+        updateSubSection(sectionId, subId, 'tempDocument', {
+          textData: extractedText,
+          name: file.name
+        });
+      }
+      
+      alert(`Documento "${file.name}" adjuntado en memoria para la IA.`);
       
     } catch (err) {
       console.error(err);
@@ -728,7 +732,11 @@ ${sub.originalComment || '(Solo hay documento adjunto)'}`;
 
       const promptParams = [promptText];
       if (sub.tempDocument) {
-        promptParams.push(sub.tempDocument.inlineData);
+        if (sub.tempDocument.inlineData) {
+          promptParams.push(sub.tempDocument.inlineData);
+        } else if (sub.tempDocument.textData) {
+          promptParams.push(`\n\nCONTENIDO DEL DOCUMENTO ADJUNTO "${sub.tempDocument.name}":\n${sub.tempDocument.textData}`);
+        }
       }
 
       const result = await model.generateContent(promptParams);
@@ -921,12 +929,13 @@ ${sub.originalComment || '(Solo hay documento adjunto)'}`;
                 </div>
                 <input 
                   type="text" 
-                  value={section.title !== undefined ? section.title : 'Apartado'} 
+                  value={section.title ?? ''} 
                   onChange={(e) => updateSection(section.id, 'title', e.target.value)}
                   style={{
                     fontSize: '1.1em', fontWeight: 'bold', color: 'var(--text-color)', 
                     border: 'none', background: 'transparent', flex: 1, minWidth: '200px'
                   }}
+                  placeholder="Apartado"
                   disabled={isViewer}
                 />
                 <span style={{fontSize: '0.85em', color: 'var(--text-light)', marginRight: '1rem'}}>{sectionDate}</span>
@@ -986,13 +995,13 @@ ${sub.originalComment || '(Solo hay documento adjunto)'}`;
                       <span style={{fontSize: '0.8rem', color: '#888', fontWeight: 'bold'}}>{index + 1}.{subIndex + 1}</span>
                       <input 
                         type="text" 
-                        value={sub.subtitle || 'Subapartado'} 
+                        value={sub.subtitle ?? ''} 
                         onChange={(e) => updateSubSection(section.id, sub.id, 'subtitle', e.target.value)}
                         style={{
                           fontSize: '0.95em', color: 'var(--text-color)', 
                           border: 'none', background: 'transparent', width: '100%'
                         }}
-                        placeholder="Escriba el nombre..."
+                        placeholder="Subapartado"
                         disabled={isViewer}
                       />
                     </div>
